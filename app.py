@@ -7,6 +7,7 @@ import io
 import networkx as nx
 from pyvis.network import Network
 import streamlit.components.v1 as components
+from PyPDF2 import PdfReader
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)
@@ -59,45 +60,56 @@ openai_base_url = "https://api.chatanywhere.tech/v1"
 initialize_openai(openai_api_key, openai_base_url)
 
 # 文件上传和处理
-uploaded_file = st.file_uploader("选择一个文本文件", type=["txt"])
+uploaded_file = st.file_uploader("选择一个文本文件或PDF文件", type=["txt", "pdf"])
 
 if uploaded_file is not None:
-    content = uploaded_file.read().decode("utf-8")
-    st.text_area("文件内容预览", content[:500], height=200)  # 显示文件内容的前500个字符
-    
-    if st.button("处理文件并生成知识图谱"):
-        with st.spinner("正在处理..."):
-            result = process_data(content)
-        st.success("处理完成！")
-        st.subheader("处理结果")
-        st.write(f"处理了 {len(result['entities'])} 个实体和 {len(result['relations'])} 个关系")
+    if uploaded_file.type == "text/plain":
+        content = uploaded_file.read().decode("utf-8")
+    elif uploaded_file.type == "application/pdf":
+        pdf_reader = PdfReader(uploaded_file)
+        content = ""
+        for page in pdf_reader.pages:
+            content += page.extract_text()
+    else:
+        st.error("不支持的文件类型")
+        content = None
+
+    if content:
+        st.text_area("文件内容预览", content[:500], height=200)  # 显示文件内容的前500个字符
         
-        # 显示实体
-        st.write("实体：")
-        for entity in result['entities']:
-            st.write(f"- {entity}")
-        
-        # 显示关系
-        st.write("关系：")
-        for relation in result['relations']:
-            if isinstance(relation, dict):
-                st.write(f"- {relation['source']} {relation['relation']} {relation['target']}")
-            else:
-                st.write(f"- {relation[0]} {relation[1]} {relation[2]}")
+        if st.button("处理文件并生成知识图谱"):
+            with st.spinner("正在处理..."):
+                result = process_data(content)
+            st.success("处理完成！")
+            st.subheader("处理结果")
+            st.write(f"处理了 {len(result['entities'])} 个实体和 {len(result['relations'])} 个关系")
+            
+            # 显示实体
+            st.write("实体：")
+            for entity in result['entities']:
+                st.write(f"- {entity}")
+            
+            # 显示关系
+            st.write("关系：")
+            for relation in result['relations']:
+                if isinstance(relation, dict):
+                    st.write(f"- {relation['source']} {relation['relation']} {relation['target']}")
+                else:
+                    st.write(f"- {relation[0]} {relation[1]} {relation[2]}")
 
-        # 显示图
-        st.subheader("知识图谱可视化")
-        display_graph(result['entities'], result['relations'])
+            # 显示图
+            st.subheader("知识图谱可视化")
+            display_graph(result['entities'], result['relations'])
 
-        # 在处理完成后添加这段代码
-        st.write("处理摘要：")
-        st.write(f"- 总共处理了 {len(result['entities'])} 个实体")
-        st.write(f"- 总共处理了 {len(result['relations'])} 个关系")
-        st.write(f"- 主要实体包括：{', '.join(result['entities'][:5])}...")
+            # 在处理完成后添加这段代码
+            st.write("处理摘要：")
+            st.write(f"- 总共处理了 {len(result['entities'])} 个实体")
+            st.write(f"- 总共处理了 {len(result['relations'])} 个关系")
+            st.write(f"- 主要实体包括：{', '.join(result['entities'][:5])}...")
 
-        # 清空日志缓存，为下一次处理做准备
-        log_capture_string.truncate(0)
-        log_capture_string.seek(0)
+            # 清空日志缓存，为下一次处理做准备
+            log_capture_string.truncate(0)
+            log_capture_string.seek(0)
 
 # 基于图的问答
 st.header("基于图的问答")
