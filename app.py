@@ -102,21 +102,15 @@ if uploaded_file is not None:
 # 基于图的问答
 st.header("基于图的问答")
 
-def on_question_submit():
-    question = st.session_state.question_input
-    if question:
-        with st.spinner("正在思考..."):
-            answer = hybrid_search(question)
-        st.subheader("回答")
-        st.write(answer)
-    else:
-        st.write("请输入一个问题。")
+with st.form(key='qa_form'):
+    qa_query = st.text_input("输入您的问题", key="question_input")
+    submit_button = st.form_submit_button(label='获取答案')
 
-qa_query = st.text_input("输入您的问题", key="question_input", on_change=on_question_submit)
-
-# 确保在每次输入变化后都调用 on_question_submit
-if qa_query:
-    on_question_submit()
+if submit_button and qa_query:
+    with st.spinner("正在思考..."):
+        answer = hybrid_search(qa_query)
+    st.subheader("回答")
+    st.write(answer)
 
 # 查看特定实体的相关信息
 st.header("查看特定实体的相关信息")
@@ -150,6 +144,9 @@ def query_entity(entity_name):
         else:
             st.write(f"没有找到与 {entity_name} 相关的信息。")
 
-entity_name = st.text_input("输入实体名称（例如：张小红）", key="entity_input")
-if entity_name:
+with st.form(key='entity_form'):
+    entity_name = st.text_input("输入实体名称（例如：张小红）", key="entity_input")
+    entity_submit_button = st.form_submit_button(label='查询实体信息')
+
+if entity_submit_button and entity_name:
     query_entity(entity_name)
