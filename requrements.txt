@@ -1,0 +1,11 @@
+streamlit==1.39.0
+pandas==2.2.3
+neo4j==5.25.0
+PyPDF2==3.0.1
+networkx==3.3
+pyvis==0.3.2
+faiss-cpu==1.8.0.post1
+numpy==1.26.4
+openai==1.51.0
+python-dotenv==1.0.1
+jieba==0.42.1
