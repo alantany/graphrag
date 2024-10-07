@@ -278,7 +278,7 @@ def hybrid_search(query):
         if response and response.choices and len(response.choices) > 0 and response.choices[0].message:
             answer = response.choices[0].message.content.strip()
             if not answer:
-                answer = "抱歉，我无法根据提供的信息回答这个问题。请尝试提供更多细节或以不同的方式提问。"
+                answer = "抱歉，我无法根��提供的信息回答这个问题。请尝试提供更多细节或以不同的方式提问。"
         else:
             answer = "抱歉，处理您的问题时出现了意外况。请稍后再试。"
         
@@ -375,7 +375,7 @@ def process_data_vector(content):
     logger.info(f"OpenAI API 返回的原始内容: {response_content}")
 
     try:
-        # 尝试解析 JSON
+        # ��试解析 JSON
         result = json.loads(response_content)
     except json.JSONDecodeError:
         # 如果解析失败，尝试使用正则表达式提取实体和关系
@@ -439,7 +439,7 @@ def hybrid_search_with_vector(query):
         for result in vector_results:
             context += f"- {result}\n"
         
-        prompt = f"{context}\n\n请根据上述信息回答问题：{query}\n\n回答："
+        prompt = f"{context}\n\n请根据上���信息回答问题：{query}\n\n回答："
         
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -469,12 +469,21 @@ def faiss_query(query, k=5):
     return results
 
 def get_all_faiss_documents():
-    logger.info("获取所有 FAISS 文档")
+    logger.info("获取所��� FAISS 文档")
     all_documents = []
     for id, text in faiss_id_to_text.items():
         all_documents.append({"id": id, "text": text})
     logger.info(f"FAISS 中有 {len(all_documents)} 个文档")
     return all_documents
 
+# 在文件的适当位置添加这个函数，比如在 set_neo4j_config 函数之后
+def get_neo4j_driver():
+    return GraphDatabase.driver(
+        CURRENT_NEO4J_CONFIG["URI"],
+        auth=(CURRENT_NEO4J_CONFIG["USERNAME"], CURRENT_NEO4J_CONFIG["PASSWORD"])
+    )
+
+# 确保将这个函数添加到 __all__ 列表中
+__all__.append('get_neo4j_driver')
 # 更新 __all__ 列表
 __all__ = ['set_neo4j_config', 'initialize_openai', 'process_data', 'query_graph', 'hybrid_search', 'CURRENT_NEO4J_CONFIG', 'query_graph_with_entities', 'get_entity_relations', 'initialize_faiss', 'process_data_vector', 'vector_search', 'hybrid_search_with_vector', 'faiss_query', 'get_all_faiss_documents']
