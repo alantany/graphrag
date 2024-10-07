@@ -59,106 +59,120 @@ openai_base_url = "https://api.chatanywhere.tech/v1"
 # 初始化 OpenAI
 initialize_openai(openai_api_key, openai_base_url)
 
-# 文件上传和处理
-uploaded_file = st.file_uploader("选择一个文本文件或PDF文件", type=["txt", "pdf"])
+# 创建两个标签页
+tab1, tab2 = st.tabs(["文档上传", "知识库检索"])
 
-if uploaded_file is not None:
-    if uploaded_file.type == "text/plain":
-        content = uploaded_file.read().decode("utf-8")
-    elif uploaded_file.type == "application/pdf":
-        pdf_reader = PdfReader(uploaded_file)
-        content = ""
-        for page in pdf_reader.pages:
-            content += page.extract_text()
-    else:
-        st.error("不支持的文件类型")
-        content = None
+# TAB1: 文档上传
+with tab1:
+    st.header("文档上传")
+    uploaded_file = st.file_uploader("选择一个文本文件或PDF文件", type=["txt", "pdf"])
 
-    if content:
-        st.text_area("文件内容预览", content[:500], height=200)  # 显示文件内容的前500个字符
-        
-        if st.button("处理文件并生成知识图谱"):
-            with st.spinner("正在处理..."):
-                result = process_data(content)
-            st.success("处理完成！")
-            st.subheader("处理结果")
-            st.write(f"处理了 {len(result['entities'])} 个实体和 {len(result['relations'])} 个关系")
-            
-            # 显示实体
-            st.write("实体：")
-            for entity in result['entities']:
-                st.write(f"- {entity}")
-            
-            # 显示关系
-            st.write("关系：")
-            for relation in result['relations']:
-                if isinstance(relation, dict):
-                    st.write(f"- {relation['source']} {relation['relation']} {relation['target']}")
-                else:
-                    st.write(f"- {relation[0]} {relation[1]} {relation[2]}")
-
-            # 显示图
-            st.subheader("知识图谱可视化")
-            display_graph(result['entities'], result['relations'])
-
-            # 在处理完成后添加这段代码
-            st.write("处理摘要：")
-            st.write(f"- 总共处理了 {len(result['entities'])} 个实体")
-            st.write(f"- 总共处理了 {len(result['relations'])} 个关系")
-            st.write(f"- 主要实体包括：{', '.join(result['entities'][:5])}...")
-
-            # 清空日志缓存，为下一次处理做准备
-            log_capture_string.truncate(0)
-            log_capture_string.seek(0)
-
-# 基于图的问答
-st.header("基于图的问答")
-
-with st.form(key='qa_form'):
-    qa_query = st.text_input("输入您的问题", key="question_input")
-    submit_button = st.form_submit_button(label='获取答案')
-
-if submit_button and qa_query:
-    with st.spinner("正在思考..."):
-        answer = hybrid_search(qa_query)
-    st.subheader("回答")
-    st.write(answer)
-
-# 查看特定实体的相关信息
-st.header("查看特定实体的相关信息")
-
-def query_entity(entity_name):
-    if entity_name:
-        with st.spinner(f"正在查询 {entity_name} 的相关信息..."):
-            entity_info = get_entity_relations(entity_name)
-        st.subheader(f"{entity_name} 的相关信息")
-        if entity_info:
-            # 准备图形数据
-            entities = set([entity_name])
-            relations = []
-            for info in entity_info:
-                if info['Related']:
-                    entities.add(info['Related'])
-                    relations.append({
-                        'source': info['Entity'],
-                        'relation': info['RelationType'] or info['Relation'],
-                        'target': info['Related']
-                    })
-            
-            # 显示图形
-            st.subheader("实体关系图")
-            display_graph(list(entities), relations)
-            
-            # 同时保留表格显示，以便查看详细信息
-            st.subheader("详细信息")
-            df = pd.DataFrame(entity_info)
-            st.dataframe(df)
+    if uploaded_file is not None:
+        if uploaded_file.type == "text/plain":
+            content = uploaded_file.read().decode("utf-8")
+        elif uploaded_file.type == "application/pdf":
+            pdf_reader = PdfReader(uploaded_file)
+            content = ""
+            for page in pdf_reader.pages:
+                content += page.extract_text()
         else:
-            st.write(f"没有找到与 {entity_name} 相关的信息。")
+            st.error("不支持的文件类型")
+            content = None
 
-with st.form(key='entity_form'):
-    entity_name = st.text_input("输入实体名称（例如：张小红）", key="entity_input")
-    entity_submit_button = st.form_submit_button(label='查询实体信息')
+        if content:
+            st.text_area("文件内容预览", content[:500], height=200)  # 显示文件内容的前500个字符
+            
+            if st.button("处理文件并生成知识图谱"):
+                with st.spinner("正在处理..."):
+                    result = process_data(content)
+                st.success("处理完成！")
+                st.subheader("处理结果")
+                st.write(f"处理了 {len(result['entities'])} 个实体和 {len(result['relations'])} 个关系")
 
-if entity_submit_button and entity_name:
-    query_entity(entity_name)
+                # 显示图
+                st.subheader("知识图谱可视化")
+                display_graph(result['entities'], result['relations'])
+
+                # 日志记录（不在页面显示）
+                logger.info("实体：")
+                for entity in result['entities']:
+                    logger.info(f"- {entity}")
+                
+                logger.info("关系：")
+                for relation in result['relations']:
+                    if isinstance(relation, dict):
+                        logger.info(f"- {relation['source']} {relation['relation']} {relation['target']}")
+                    else:
+                        logger.info(f"- {relation[0]} {relation[1]} {relation[2]}")
+
+                logger.info("处理摘要：")
+                logger.info(f"- 总共处理了 {len(result['entities'])} 个实体")
+                logger.info(f"- 总共处理了 {len(result['relations'])} 个关系")
+                logger.info(f"- 主要实体包括：{', '.join(result['entities'][:5])}...")
+
+# TAB2: 知识库检索
+with tab2:
+    st.header("知识库检索")
+    
+    search_type = st.radio("选择检索方式", ["图数据检索", "向量数据检索", "混合检索"])
+    
+    if search_type == "图数据检索":
+        st.subheader("图数据检索")
+        
+        # 基于图的问答
+        with st.form(key='qa_form'):
+            qa_query = st.text_input("输入您的问题", key="question_input")
+            submit_button = st.form_submit_button(label='获取答案')
+
+        if submit_button and qa_query:
+            with st.spinner("正在思考..."):
+                answer = hybrid_search(qa_query)
+            st.subheader("回答")
+            st.write(answer)
+
+        # 查看特定实体的相关信息
+        st.subheader("查看特定实体的相关信息")
+
+        def query_entity(entity_name):
+            if entity_name:
+                with st.spinner(f"正在查询 {entity_name} 的相关信息..."):
+                    entity_info = get_entity_relations(entity_name)
+                st.subheader(f"{entity_name} 的相关信息")
+                if entity_info:
+                    # 准备图形数据
+                    entities = set([entity_name])
+                    relations = []
+                    for info in entity_info:
+                        if info['Related']:
+                            entities.add(info['Related'])
+                            relations.append({
+                                'source': info['Entity'],
+                                'relation': info['RelationType'] or info['Relation'],
+                                'target': info['Related']
+                            })
+                    
+                    # 显示图形
+                    st.subheader("实体关系图")
+                    display_graph(list(entities), relations)
+                    
+                    # 同时保留表格显示，以便查看详细信息
+                    st.subheader("详细信息")
+                    df = pd.DataFrame(entity_info)
+                    st.dataframe(df)
+                else:
+                    st.write(f"没有找到与 {entity_name} 相关的信息。")
+
+        with st.form(key='entity_form'):
+            entity_name = st.text_input("输入实体名称（例如：张小红）", key="entity_input")
+            entity_submit_button = st.form_submit_button(label='查询实体信息')
+
+        if entity_submit_button and entity_name:
+            query_entity(entity_name)
+    
+    elif search_type == "向量数据检索":
+        st.subheader("向量数据检��")
+        st.write("此功能尚未实现，敬请期待。")
+    
+    else:  # 混合检索
+        st.subheader("混合检索")
+        st.write("此功能尚未实现，敬请期待。")
