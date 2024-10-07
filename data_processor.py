@@ -168,10 +168,7 @@ def process_data(content):
     logger.info(f"处理后的实体: {entities}")
     logger.info(f"处理的关系: {relations}")
 
-    driver = GraphDatabase.driver(
-        CURRENT_NEO4J_CONFIG["URI"],
-        auth=(CURRENT_NEO4J_CONFIG["USERNAME"], CURRENT_NEO4J_CONFIG["PASSWORD"])
-    )
+    driver = get_neo4j_driver()
     
     with driver.session() as session:
         # 创建实体
@@ -476,7 +473,7 @@ def get_all_faiss_documents():
     all_documents = []
     for id, text in faiss_id_to_text.items():
         all_documents.append({"id": id, "text": text})
-    logger.info(f"FAISS 中��有 {len(all_documents)} 个文档")
+    logger.info(f"FAISS 中有 {len(all_documents)} 个文档")
     return all_documents
 
 # 更新 __all__ 列表

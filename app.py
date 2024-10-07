@@ -44,27 +44,38 @@ st.title("知识图谱生成系统")
 # Neo4j 配置选择
 neo4j_option = st.radio(
     "选择 Neo4j 连接方式",
-    ("Neo4j Aura", "本地 Neo4j")  # 交换了选项的顺序
+    ("Neo4j Aura", "本地 Neo4j")
 )
 
 st.write(f"选择的连接方式: {neo4j_option}")
 
-if neo4j_option == "Neo4j Aura":  # 这里改为 "Neo4j Aura"
-    config_set = set_neo4j_config("LOCAL")  # 保持不变，仍然设置本地配置
+if neo4j_option == "Neo4j Aura":
+    config_set = set_neo4j_config("AURA")
     st.write("已选择 Neo4j Aura 连接")
-else:  # 这里隐含的是 "本地 Neo4j" 选项
-    config_set = set_neo4j_config("AURA")  # 保持不变，仍然设置 Aura 配置
+else:
+    config_set = set_neo4j_config("LOCAL")
     st.write("已选择本地 Neo4j 连接")
 
 st.write(f"当前配置: {CURRENT_NEO4J_CONFIG}")
 
+# 在每次数据库操作之前，确保使用正确的配置
+def get_neo4j_driver():
+    return GraphDatabase.driver(
+        CURRENT_NEO4J_CONFIG["URI"],
+        auth=(CURRENT_NEO4J_CONFIG["USERNAME"], CURRENT_NEO4J_CONFIG["PASSWORD"])
+    )
+
+# 使用这个函数替换所有直接创建 driver 的地方
+# 例如：
+# driver = get_neo4j_driver()
+# with driver.session() as session:
+#     ...
+# driver.close()
+
 if config_set:
     # 测试数据库连接
     try:
-        driver = GraphDatabase.driver(
-            CURRENT_NEO4J_CONFIG["URI"],
-            auth=(CURRENT_NEO4J_CONFIG["USERNAME"], CURRENT_NEO4J_CONFIG["PASSWORD"])
-        )
+        driver = get_neo4j_driver()
         with driver.session() as session:
             result = session.run("RETURN 1 AS test")
             test_value = result.single()["test"]
@@ -249,10 +260,7 @@ with tab3:
         if st.button("执行 Cypher 查询"):
             if cypher_query:
                 try:
-                    driver = GraphDatabase.driver(
-                        CURRENT_NEO4J_CONFIG["URI"],
-                        auth=(CURRENT_NEO4J_CONFIG["USERNAME"], CURRENT_NEO4J_CONFIG["PASSWORD"])
-                    )
+                    driver = get_neo4j_driver()
                     
                     with driver.session() as session:
                         result = session.run(cypher_query)
