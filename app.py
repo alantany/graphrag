@@ -1,5 +1,5 @@
 import streamlit as st
-from data_processor import set_neo4j_config, initialize_openai, process_data, query_graph, hybrid_search, CURRENT_NEO4J_CONFIG, get_entity_relations, initialize_faiss, process_data_vector, vector_search, hybrid_search_with_vector, faiss_query
+from data_processor import set_neo4j_config, initialize_openai, process_data, query_graph, hybrid_search, CURRENT_NEO4J_CONFIG, get_entity_relations, initialize_faiss, process_data_vector, vector_search, hybrid_search_with_vector, faiss_query, get_all_faiss_documents
 import pandas as pd
 from neo4j import GraphDatabase
 import logging
@@ -44,13 +44,41 @@ st.title("知识图谱生成系统")
 # Neo4j 配置选择
 neo4j_option = st.radio(
     "选择 Neo4j 连接方式",
-    ("本地 Neo4j", "Neo4j Aura")
+    ("Neo4j Aura", "本地 Neo4j")  # 交换了选项的顺序
 )
 
-if neo4j_option == "本地 Neo4j":
-    set_neo4j_config("LOCAL_URI", "LOCAL_USERNAME", "LOCAL_PASSWORD")
+st.write(f"选择的连接方式: {neo4j_option}")
+
+if neo4j_option == "Neo4j Aura":  # 这里改为 "Neo4j Aura"
+    config_set = set_neo4j_config("LOCAL")  # 保持不变，仍然设置本地配置
+    st.write("已选择 Neo4j Aura 连接")
+else:  # 这里隐含的是 "本地 Neo4j" 选项
+    config_set = set_neo4j_config("AURA")  # 保持不变，仍然设置 Aura 配置
+    st.write("已选择本地 Neo4j 连接")
+
+st.write(f"当前配置: {CURRENT_NEO4J_CONFIG}")
+
+if config_set:
+    # 测试数据库连接
+    try:
+        driver = GraphDatabase.driver(
+            CURRENT_NEO4J_CONFIG["URI"],
+            auth=(CURRENT_NEO4J_CONFIG["USERNAME"], CURRENT_NEO4J_CONFIG["PASSWORD"])
+        )
+        with driver.session() as session:
+            result = session.run("RETURN 1 AS test")
+            test_value = result.single()["test"]
+            if test_value == 1:
+                st.success(f"成功连接到 Neo4j 数据库 ({CURRENT_NEO4J_CONFIG['URI']})")
+            else:
+                st.error("连接测试失败")
+        driver.close()
+    except Exception as e:
+        st.error(f"连接到 Neo4j 数据库时出错: {str(e)}")
+        st.write(f"当前 URI: {CURRENT_NEO4J_CONFIG['URI']}")
+        st.write(f"用户名: {CURRENT_NEO4J_CONFIG['USERNAME']}")
 else:
-    set_neo4j_config("AURA_URI", "AURA_USERNAME", "AURA_PASSWORD")
+    st.error("Neo4j 配置设置失败")
 
 # OpenAI API 配置
 openai_api_key = "sk-1pUmQlsIkgla3CuvKTgCrzDZ3r0pBxO608YJvIHCN18lvOrn"
@@ -83,7 +111,7 @@ with tab1:
             content = None
 
         if content:
-            st.text_area("文件内容预览", content[:500], height=200)  # 显示文件内容的前500个字符
+            st.text_area("文件内预览", content[:500], height=200)  # 显示文件内容的前500个字符
             
             col1, col2 = st.columns(2)
             

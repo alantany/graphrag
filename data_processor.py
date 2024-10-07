@@ -8,22 +8,21 @@ import json
 from openai import OpenAI
 import numpy as np
 import faiss
+import os
+
+# Neo4j连接配置
+AURA_URI = "neo4j+s://b76a61f2.databases.neo4j.io:7687"
+AURA_USERNAME = "neo4j"
+AURA_PASSWORD = "JkVujA4SZWdifvfvj5m_gwdUgHsuTxQjbJQooUl1C14"
+
+LOCAL_URI = "bolt://localhost:7687"
+LOCAL_USERNAME = "test"
+LOCAL_PASSWORD = "Mikeno01"
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Neo4j 配置
-NEO4J_CONFIG = {
-    "LOCAL_URI": "bolt://localhost:7687",
-    "LOCAL_USERNAME": "test",
-    "LOCAL_PASSWORD": "Mikeno01",
-    "AURA_URI": "neo4j+s://b76a61f2.databases.neo4j.io:7687",
-    "AURA_USERNAME": "neo4j",
-    "AURA_PASSWORD": "JkVujA4SZWdifvfvj5m_gwdUgHsuTxQjbJQooUl1C14"
-}
-
-# 在文件顶部附近定义
 CURRENT_NEO4J_CONFIG = {}
 
 client = None
@@ -33,22 +32,28 @@ faiss_index = None
 faiss_id_to_text = {}
 faiss_id_counter = 0
 
-def set_neo4j_config(uri_key, username_key, password_key):
+def set_neo4j_config(config_type):
     global CURRENT_NEO4J_CONFIG
-    logger.info(f"正在设置 Neo4j 配置，使用键: URI={uri_key}, USERNAME={username_key}, PASSWORD={password_key}")
-    try:
+    if config_type == "LOCAL":
         CURRENT_NEO4J_CONFIG = {
-            "URI": NEO4J_CONFIG[uri_key],
-            "USERNAME": NEO4J_CONFIG[username_key],
-            "PASSWORD": NEO4J_CONFIG[password_key]
+            "URI": LOCAL_URI,
+            "USERNAME": LOCAL_USERNAME,
+            "PASSWORD": LOCAL_PASSWORD
         }
-        logger.info(f"Neo4j 配置已设置: {CURRENT_NEO4J_CONFIG}")
-    except KeyError as e:
-        logger.error(f"设置 Neo4j 配置时出错: 找不到键 {str(e)}")
-        logger.error(f"当前 NEO4J_CONFIG: {NEO4J_CONFIG}")
-        CURRENT_NEO4J_CONFIG = {}
+        logger.info(f"设置本地 Neo4j 连接: {LOCAL_URI}")
+    elif config_type == "AURA":
+        CURRENT_NEO4J_CONFIG = {
+            "URI": AURA_URI,
+            "USERNAME": AURA_USERNAME,
+            "PASSWORD": AURA_PASSWORD
+        }
+        logger.info(f"设置 Neo4j Aura 连接: {AURA_URI}")
+    else:
+        logger.error(f"未知的配置类型: {config_type}")
+        return False
     
-    logger.info(f"设置后的 CURRENT_NEO4J_CONFIG: {CURRENT_NEO4J_CONFIG}")
+    logger.info(f"Neo4j 配置已设置: URI={CURRENT_NEO4J_CONFIG['URI']}, USERNAME={CURRENT_NEO4J_CONFIG['USERNAME']}")
+    return True
 
 def initialize_openai(api_key, base_url):
     global client
@@ -75,7 +80,7 @@ def process_data(content):
     请从以下医疗记录中提取所有要的实体和关系。
     实体应包括但不限于：患者姓名、年龄、性别、诊断、症状、检查、治疗、药物、生理指标等。
     关系应描述实体之间的所有可能联系，如"患有"、"接受检查"、"使用药物"、"属性"等。
-    请确保每个实体都至少有一个关系。对于没有明确关系的属性（如性别、年龄等），请使用"属性"作为关系类型。
+    请确保每个实体都至少有一个关系。对于没有明确关系的性（如性别、年龄等），请使用"属性"作为关系类型。
     请尽可能详细地提取关系，不要遗漏任何可能的连接。
     请以JSON格式输出，格式如下：
     {{
@@ -112,7 +117,7 @@ def process_data(content):
         entities = extracted_data['entities']
         relations = extracted_data['relations']
 
-        # 确保所有实体都是字符串
+        # 保所有实体都是字符串
         entities = [str(e) for e in entities]
         
         # 确保所有关系都是字典，且包含必要的键
@@ -278,7 +283,7 @@ def hybrid_search(query):
             if not answer:
                 answer = "抱歉，我无法根据提供的信息回答这个问题。请尝试提供更多细节或以不同的方式提问。"
         else:
-            answer = "抱歉，在处理您的问题时出现了意外况。请稍后再试。"
+            answer = "抱歉，处理您的问题时出现了意外况。请稍后再试。"
         
         logger.info(f"搜索结果: {answer}")
         return answer
