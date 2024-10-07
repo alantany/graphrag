@@ -476,7 +476,7 @@ def get_all_faiss_documents():
     all_documents = []
     for id, text in faiss_id_to_text.items():
         all_documents.append({"id": id, "text": text})
-    logger.info(f"FAISS 中共有 {len(all_documents)} 个文档")
+    logger.info(f"FAISS 中��有 {len(all_documents)} 个文档")
     return all_documents
 
 # 更新 __all__ 列表
