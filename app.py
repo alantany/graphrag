@@ -95,35 +95,32 @@ def main():
         ("Neo4j Aura", "本地 Neo4j")
     )
 
-    st.write(f"选择的连接方式: {neo4j_option}")
-
     if neo4j_option == "Neo4j Aura":
         CURRENT_NEO4J_CONFIG = set_neo4j_config("AURA")
-        st.write("已选择 Neo4j Aura 连接")
+        st.success("已选择并连接到 Neo4j Aura")
     else:
         CURRENT_NEO4J_CONFIG = set_neo4j_config("LOCAL")
-        st.write("已选择本地 Neo4j 连接")
+        st.success("已选择并连接到本地 Neo4j")
 
-    st.write(f"配置设置结果: {CURRENT_NEO4J_CONFIG is not None}")
-    st.write(f"当前配置: {CURRENT_NEO4J_CONFIG}")
-
+    # 测试数据库连接
     if CURRENT_NEO4J_CONFIG:
-        # 测试数据库连接
         try:
             driver = get_neo4j_driver()
             with driver.session() as session:
                 result = session.run("RETURN 1 AS test")
                 test_value = result.single()["test"]
                 if test_value == 1:
-                    st.success(f"成功连接到 Neo4j 数据库 ({CURRENT_NEO4J_CONFIG['URI']})")
+                    st.success("Neo4j 数据库连接成功")
                 else:
-                    st.error("连接测试失败")
+                    st.error("Neo4j 数据库连接测试失败")
             driver.close()
         except Exception as e:
-            st.error(f"连接 Neo4j 数据库时出错: {str(e)}")
-            st.write(f"当前配置: {CURRENT_NEO4J_CONFIG}")
+            st.error(f"连接到 Neo4j 数据库时出错: {str(e)}")
     else:
         st.error("Neo4j 配置无效或未设置")
+
+    # 添加一个分隔线
+    st.markdown("---")
 
     # 创建三个标签页
     tab1, tab2, tab3 = st.tabs(["文档上传", "知识库问答", "数据库检索"])
@@ -224,7 +221,7 @@ def main():
             graph_query = st.text_input("请输入您的问题（图数据库）")
             if st.button("提交问题（图）"):
                 if graph_query:
-                    with st.spinner("正在查询..."):
+                    with st.spinner("正在��询..."):
                         answer = hybrid_search(graph_query)
                     st.write("回答：", answer)
                 else:
