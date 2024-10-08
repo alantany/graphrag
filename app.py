@@ -1,5 +1,5 @@
 """
-AI知识问答系统
+基于图数据库及向量数据库的混合问答系统
 """
 
 import streamlit as st
