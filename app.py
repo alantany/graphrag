@@ -119,7 +119,7 @@ def main():
     else:
         st.error("Neo4j 配置无效或未设置")
 
-    # 添加一个分隔线
+    # 添加一个���隔线
     st.markdown("---")
 
     # 创建三个标签页
@@ -193,18 +193,59 @@ def main():
     with tab2:
         st.header("知识库问答")
         
-        # 选择答类型
         qa_type = st.radio("选择问答类型", ["向量数据库问答", "图数据库问答", "混合问答"])
         
         if qa_type == "向量数据库问答":
-            # 向量数据库问答部分
             st.subheader("向量数据库问答")
-            vector_query = st.text_input("请输入您的问题（向量数据库）")
-            if st.button("提交问题（向量）"):
-                if vector_query:
-                    with st.spinner("正在查询..."):
-                        answer, sources, excerpt = rag_qa(vector_query, st.session_state.file_indices)
-                    st.write("回答：", answer)
+            with st.form(key='vector_qa_form'):
+                vector_query = st.text_input("请输入您的问题（向量数据库）")
+                submit_button = st.form_submit_button(label='提交问题')
+            if submit_button and vector_query:
+                with st.spinner("正在查询..."):
+                    answer, sources, excerpt = rag_qa(vector_query, st.session_state.file_indices)
+                st.write("回答：", answer)
+                if sources:
+                    st.write("参考来源：")
+                    for source, _ in sources:
+                        st.write(f"- {source}")
+                if excerpt:
+                    st.write("相关原文：")
+                    st.write(excerpt)
+        
+        elif qa_type == "图数据库问答":
+            st.subheader("图数据库问答")
+            with st.form(key='graph_qa_form'):
+                graph_query = st.text_input("请输入您的问题（图数据库）")
+                submit_button = st.form_submit_button(label='提交问题')
+            if submit_button and graph_query:
+                with st.spinner("正在查询..."):
+                    answer = hybrid_search(graph_query)
+                st.write("回答：", answer)
+        
+        else:
+            st.subheader("混合问答")
+            with st.form(key='hybrid_qa_form'):
+                hybrid_query = st.text_input("请输入您的问题（混合问答）")
+                submit_button = st.form_submit_button(label='提交问题')
+            if submit_button and hybrid_query:
+                with st.spinner("正在查询..."):
+                    # 图数据库查询
+                    graph_answer = hybrid_search(hybrid_query)
+                    
+                    # 向量数据库查询
+                    vector_answer, sources, excerpt = rag_qa(hybrid_query, st.session_state.file_indices)
+                    
+                    # 组合结果
+                    combined_context = f"图数据库回答：{graph_answer}\n\n向量数据库回答：{vector_answer}"
+                    if excerpt:
+                        combined_context += f"\n\n相关原文：{excerpt}"
+                    
+                    # 使用大模型生成最终答案
+                    final_answer = generate_final_answer(hybrid_query, combined_context)
+                    
+                    st.write("最终回答：", final_answer)
+                    st.write("图数据库回答：", graph_answer)
+                    st.write("向量数据库回答：", vector_answer)
                     if sources:
                         st.write("参考来源：")
                         for source, _ in sources:
@@ -212,59 +253,13 @@ def main():
                     if excerpt:
                         st.write("相关原文：")
                         st.write(excerpt)
-                else:
-                    st.warning("请入问题")
-        
-        elif qa_type == "图数据库问答":
-            # 图数据库问答部分
-            st.subheader("图数据库问答")
-            graph_query = st.text_input("请输入您的问题（图数据库）")
-            if st.button("提交问题（图）"):
-                if graph_query:
-                    with st.spinner("正在��询..."):
-                        answer = hybrid_search(graph_query)
-                    st.write("回答：", answer)
-                else:
-                    st.warning("请输入问题")
-        
-        else:
-            # 混合问答部分
-            st.subheader("混合问答")
-            hybrid_query = st.text_input("请输入您的问题（混合问答）")
-            if st.button("提交问题（混合）"):
-                if hybrid_query:
-                    with st.spinner("正在查询..."):
-                        # 图数据库查询
-                        graph_answer = hybrid_search(hybrid_query)
-                        
-                        # 向量数据库查询
-                        vector_answer, sources, excerpt = rag_qa(hybrid_query, st.session_state.file_indices)
-                        
-                        # 组合结果
-                        combined_context = f"图数据库回答：{graph_answer}\n\n向量数据库回答：{vector_answer}"
-                        if excerpt:
-                            combined_context += f"\n\n相关原文：{excerpt}"
-                        
-                        # 使用大模型生成最终答案
-                        final_answer = generate_final_answer(hybrid_query, combined_context)
-                        
-                        st.write("最终回答：", final_answer)
-                        st.write("图数据库回答：", graph_answer)
-                        st.write("向量数据库回答：", vector_answer)
-                        if sources:
-                            st.write("参考来源：")
-                            for source, _ in sources:
-                                st.write(f"- {source}")
-                        if excerpt:
-                            st.write("相关原文：")
-                            st.write(excerpt)
-                else:
-                    st.warning("请输入问题")
 
         # 添加关键词搜索功能
         st.subheader("关键词搜索")
-        search_keywords = st.text_input("输入关键词（用空格分隔）")
-        if search_keywords:
+        with st.form(key='keyword_search_form'):
+            search_keywords = st.text_input("输入关键词（用空格分隔）")
+            submit_button = st.form_submit_button(label='搜索')
+        if submit_button and search_keywords:
             keywords = search_keywords.split()
             relevant_docs = search_documents(keywords, st.session_state.file_indices)
             if relevant_docs:
@@ -284,75 +279,72 @@ def main():
         
         if search_type == "图数据库搜索":
             st.subheader("图数据库搜索")
-            graph_query = st.text_input("输入搜索关键词")
-            if st.button("执行图数据库搜索"):
-                if graph_query:
-                    with st.spinner("正在搜索图数据库..."):
-                        entities, relations, contents = query_graph(graph_query)
-                    if entities or relations:
-                        st.success("搜索完成！")
-                        st.write("找到的实体:")
-                        st.write(", ".join(entities))
-                        st.write("相关关系:")
-                        for relation in relations:
-                            st.write(f"{relation['source']} --[{relation['relation']}]--> {relation['target']}")
-                        
-                        # 创建并显示关系图
-                        G = nx.Graph()
-                        for entity in entities:
-                            G.add_node(entity)
-                        for relation in relations:
-                            G.add_edge(relation['source'], relation['target'], title=relation['relation'])
-                        
-                        net = Network(notebook=True, width="100%", height="500px", bgcolor="#222222", font_color="white")
-                        net.from_nx(G)
-                        net.save_graph("graph.html")
-                        
-                        with open("graph.html", 'r', encoding='utf-8') as f:
-                            html_string = f.read()
-                        components.html(html_string, height=600)
-                    else:
-                        st.warning("没有找到相关信息。")
+            with st.form(key='graph_search_form'):
+                graph_query = st.text_input("输入搜索关键词")
+                submit_button = st.form_submit_button(label='执行图数据库搜索')
+            if submit_button and graph_query:
+                with st.spinner("正在搜索图数据库..."):
+                    entities, relations, contents = query_graph(graph_query)
+                if entities or relations:
+                    st.success("搜索完成！")
+                    st.write("找到的实体:")
+                    st.write(", ".join(entities))
+                    st.write("相关关系:")
+                    for relation in relations:
+                        st.write(f"{relation['source']} --[{relation['relation']}]--> {relation['target']}")
+                    
+                    # 创建并显示关系图
+                    G = nx.Graph()
+                    for entity in entities:
+                        G.add_node(entity)
+                    for relation in relations:
+                        G.add_edge(relation['source'], relation['target'], title=relation['relation'])
+                    
+                    net = Network(notebook=True, width="100%", height="500px", bgcolor="#222222", font_color="white")
+                    net.from_nx(G)
+                    net.save_graph("graph.html")
+                    
+                    with open("graph.html", 'r', encoding='utf-8') as f:
+                        html_string = f.read()
+                    components.html(html_string, height=600)
                 else:
-                    st.warning("请输入搜索关键词。")
+                    st.warning("没有找到相关信息。")
 
         elif search_type == "向量数据库搜索":
             st.subheader("向量数据库搜索")
-            vector_query = st.text_input("输入搜索关键词")
-            if st.button("执行向量数据库搜索"):
-                if vector_query:
-                    with st.spinner("正在搜索向量数据库..."):
-                        results = vector_search(vector_query, k=5)  # 假设 k=5，返前5个最相似的结果
-                    if results:
-                        st.success("搜索完成！")
-                        for i, result in enumerate(results, 1):
-                            st.write(f"结果 {i}:")
-                            st.write(f"相似度: {1 - result['distance']:.4f}")
-                            st.write(f"内容: {result['text'][:200]}...")  # 只显示前200个字符
-                            st.write("---")
-                    else:
-                        st.warning("没有找到相关信息。")
+            with st.form(key='vector_search_form'):
+                vector_query = st.text_input("输入搜索关键词")
+                submit_button = st.form_submit_button(label='执行向量数据库搜索')
+            if submit_button and vector_query:
+                with st.spinner("正在搜索向量数据库..."):
+                    results = vector_search(vector_query, k=5)  # 假设 k=5，返前5个最相似的结果
+                if results:
+                    st.success("搜索完成！")
+                    for i, result in enumerate(results, 1):
+                        st.write(f"结果 {i}:")
+                        st.write(f"相似度: {1 - result['distance']:.4f}")
+                        st.write(f"内容: {result['text'][:200]}...")  # 只显示前200个字符
+                        st.write("---")
                 else:
-                    st.warning("请输入搜索关键词。")
+                    st.warning("没有找到相关信息。")
 
         else:  # Neo4j 命令执行
             st.subheader("Neo4j 命令执行")
-            cypher_query = st.text_area("输入 Cypher 查询语句")
-            if st.button("执行 Neo4j 查询"):
-                if cypher_query:
-                    with st.spinner("正在执行 Neo4j 查询..."):
-                        try:
-                            results = execute_neo4j_query(cypher_query)
-                            if results:
-                                st.success("查询执行成功！")
-                                df = pd.DataFrame(results)
-                                st.dataframe(df)
-                            else:
-                                st.info("查询执行成功，但没有返回结果。")
-                        except Exception as e:
-                            st.error(f"执行查询时发生错误: {str(e)}")
-                else:
-                    st.warning("请输入 Cypher 查询语句。")
+            with st.form(key='neo4j_query_form'):
+                cypher_query = st.text_area("输入 Cypher 查询语句")
+                submit_button = st.form_submit_button(label='执行 Neo4j 查询')
+            if submit_button and cypher_query:
+                with st.spinner("正在执行 Neo4j 查询..."):
+                    try:
+                        results = execute_neo4j_query(cypher_query)
+                        if results:
+                            st.success("查询执行成功！")
+                            df = pd.DataFrame(results)
+                            st.dataframe(df)
+                        else:
+                            st.info("查询执行成功，但没有返回结果。")
+                    except Exception as e:
+                        st.error(f"执行查询时发生错误: {str(e)}")
 
 if __name__ == "__main__":
     main()
