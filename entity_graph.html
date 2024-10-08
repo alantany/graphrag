@@ -1,0 +1,250 @@
+<html>
+    <head>
+        <meta charset="utf-8">
+        
+            <script src="lib/bindings/utils.js"></script>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/dist/vis-network.min.css" integrity="sha512-WgxfT5LWjfszlPHXRmBWHkV2eceiWTOBvrKCNbdgDYTHrT2AeLCGbF4sZlZw3UMN3WtL0tGUoIAKsu8mllg/XA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/vis-network.min.js" integrity="sha512-LnvoEWDFrqGHlHmDD2101OrLcbsfkrzoSpvtSQtxK3RMnRV0eOkhhBN2dXHKRrUU8p2DGRTk35n4O8nWSVe1mQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+            
+        
+<center>
+<h1></h1>
+</center>
+
+<!-- <link rel="stylesheet" href="../node_modules/vis/dist/vis.min.css" type="text/css" />
+<script type="text/javascript" src="../node_modules/vis/dist/vis.js"> </script>-->
+        <link
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/css/bootstrap.min.css"
+          rel="stylesheet"
+          integrity="sha384-eOJMYsd53ii+scO/bJGFsiCZc+5NDVN2yr8+0RDqr0Ql0h+rP48ckxlpbzKgwra6"
+          crossorigin="anonymous"
+        />
+        <script
+          src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/js/bootstrap.bundle.min.js"
+          integrity="sha384-JEW9xMcG8R+pH31jmWH6WWP0WintQrMb4s7ZOdauHnUtxwoG2vI5DkLtS3qm9Ekf"
+          crossorigin="anonymous"
+        ></script>
+
+
+        <center>
+          <h1></h1>
+        </center>
+        <style type="text/css">
+
+             #mynetwork {
+                 width: 100%;
+                 height: 500px;
+                 background-color: #222222;
+                 border: 1px solid lightgray;
+                 position: relative;
+                 float: left;
+             }
+
+             
+             #loadingBar {
+                 position:absolute;
+                 top:0px;
+                 left:0px;
+                 width: 100%;
+                 height: 500px;
+                 background-color:rgba(200,200,200,0.8);
+                 -webkit-transition: all 0.5s ease;
+                 -moz-transition: all 0.5s ease;
+                 -ms-transition: all 0.5s ease;
+                 -o-transition: all 0.5s ease;
+                 transition: all 0.5s ease;
+                 opacity:1;
+             }
+
+             #bar {
+                 position:absolute;
+                 top:0px;
+                 left:0px;
+                 width:20px;
+                 height:20px;
+                 margin:auto auto auto auto;
+                 border-radius:11px;
+                 border:2px solid rgba(30,30,30,0.05);
+                 background: rgb(0, 173, 246); /* Old browsers */
+                 box-shadow: 2px 0px 4px rgba(0,0,0,0.4);
+             }
+
+             #border {
+                 position:absolute;
+                 top:10px;
+                 left:10px;
+                 width:500px;
+                 height:23px;
+                 margin:auto auto auto auto;
+                 box-shadow: 0px 0px 4px rgba(0,0,0,0.2);
+                 border-radius:10px;
+             }
+
+             #text {
+                 position:absolute;
+                 top:8px;
+                 left:530px;
+                 width:30px;
+                 height:50px;
+                 margin:auto auto auto auto;
+                 font-size:22px;
+                 color: #000000;
+             }
+
+             div.outerBorder {
+                 position:relative;
+                 top:400px;
+                 width:600px;
+                 height:44px;
+                 margin:auto auto auto auto;
+                 border:8px solid rgba(0,0,0,0.1);
+                 background: rgb(252,252,252); /* Old browsers */
+                 background: -moz-linear-gradient(top,  rgba(252,252,252,1) 0%, rgba(237,237,237,1) 100%); /* FF3.6+ */
+                 background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(252,252,252,1)), color-stop(100%,rgba(237,237,237,1))); /* Chrome,Safari4+ */
+                 background: -webkit-linear-gradient(top,  rgba(252,252,252,1) 0%,rgba(237,237,237,1) 100%); /* Chrome10+,Safari5.1+ */
+                 background: -o-linear-gradient(top,  rgba(252,252,252,1) 0%,rgba(237,237,237,1) 100%); /* Opera 11.10+ */
+                 background: -ms-linear-gradient(top,  rgba(252,252,252,1) 0%,rgba(237,237,237,1) 100%); /* IE10+ */
+                 background: linear-gradient(to bottom,  rgba(252,252,252,1) 0%,rgba(237,237,237,1) 100%); /* W3C */
+                 filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#fcfcfc', endColorstr='#ededed',GradientType=0 ); /* IE6-9 */
+                 border-radius:72px;
+                 box-shadow: 0px 0px 10px rgba(0,0,0,0.2);
+             }
+             
+
+             
+
+             
+        </style>
+    </head>
+
+
+    <body>
+        <div class="card" style="width: 100%">
+            
+            
+            <div id="mynetwork" class="card-body"></div>
+        </div>
+
+        
+            <div id="loadingBar">
+              <div class="outerBorder">
+                <div id="text">0%</div>
+                <div id="border">
+                  <div id="bar"></div>
+                </div>
+              </div>
+            </div>
+        
+        
+
+        <script type="text/javascript">
+
+              // initialize global variables.
+              var edges;
+              var nodes;
+              var allNodes;
+              var allEdges;
+              var nodeColors;
+              var originalNodes;
+              var network;
+              var container;
+              var options, data;
+              var filter = {
+                  item : '',
+                  property : '',
+                  value : []
+              };
+
+              
+
+              
+
+              // This method is responsible for drawing the graph, returns the drawn network
+              function drawGraph() {
+                  var container = document.getElementById('mynetwork');
+
+                  
+
+                  // parsing and collecting nodes and edges from the python
+                  nodes = new vis.DataSet([{"color": "#97c2fc", "font": {"color": "white"}, "id": "\u5f20\u5c0f\u7ea2", "label": "\u5f20\u5c0f\u7ea2", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u5fc3\u80baX\u7ebf\u672a\u89c1\u660e\u663e\u6d3b\u52a8\u6027\u75c5\u53d8", "label": "\u5fc3\u80baX\u7ebf\u672a\u89c1\u660e\u663e\u6d3b\u52a8\u6027\u75c5\u53d8", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u836f\u7269", "label": "\u836f\u7269", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u4f4e\u8840\u7cd6\u53cd\u5e94", "label": "\u4f4e\u8840\u7cd6\u53cd\u5e94", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "2hBG", "label": "2hBG", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "FBG", "label": "FBG", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u7761\u7720", "label": "\u7761\u7720", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u80c3\u7eb3", "label": "\u80c3\u7eb3", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "GFR", "label": "GFR", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u773c\u79d1\u68c0\u67e5", "label": "\u773c\u79d1\u68c0\u67e5", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u8d85\u58f0", "label": "\u8d85\u58f0", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "2hPG", "label": "2hPG", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "FPG", "label": "FPG", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u7535\u89e3\u8d28", "label": "\u7535\u89e3\u8d28", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u80be\u529f\u80fd", "label": "\u80be\u529f\u80fd", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u809d\u529f", "label": "\u809d\u529f", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u8840\u916e", "label": "\u8840\u916e", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u8840\u7cd6", "label": "\u8840\u7cd6", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u4f53\u91cd\u4e0b\u964d\u5e74", "label": "\u4f53\u91cd\u4e0b\u964d\u5e74", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u591a\u98df", "label": "\u591a\u98df", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u53d1\u73b0\u8840\u7cd6\u5347\u9ad8\u5e74", "label": "\u53d1\u73b0\u8840\u7cd6\u5347\u9ad8\u5e74", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "2006\u5e746\u67088\u65e5", "label": "2006\u5e746\u67088\u65e5", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "2006\u5e746\u67083\u65e5", "label": "2006\u5e746\u67083\u65e5", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u4e3b\u6cbb\u533b\u5e08\uff1a\u5218\u82b3", "label": "\u4e3b\u6cbb\u533b\u5e08\uff1a\u5218\u82b3", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u4e3b\u4efb\u533b\u5e08\uff1a\u5305\u7389\u5029", "label": "\u4e3b\u4efb\u533b\u5e08\uff1a\u5305\u7389\u5029", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u597d\u8f6c", "label": "\u597d\u8f6c", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u51fa\u9662\u533b\u5631", "label": "\u51fa\u9662\u533b\u5631", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u4e8c\u7532\u53cc\u80cd", "label": "\u4e8c\u7532\u53cc\u80cd", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u62dc\u7cd6\u5e73", "label": "\u62dc\u7cd6\u5e73", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u80f0\u5c9b\u7d20", "label": "\u80f0\u5c9b\u7d20", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u80f0\u5c9b\u7d20\u6cf5", "label": "\u80f0\u5c9b\u7d20\u6cf5", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u4f4f\u9662", "label": "\u4f4f\u9662", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u4f53\u91cd\u4e0b\u964d", "label": "\u4f53\u91cd\u4e0b\u964d", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u591a\u5c3f", "label": "\u591a\u5c3f", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u53e3\u5e72", "label": "\u53e3\u5e72", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u8102\u4ee3\u8c22\u7d0a\u4e71", "label": "\u8102\u4ee3\u8c22\u7d0a\u4e71", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u9ad8\u8840\u538b\u75c5", "label": "\u9ad8\u8840\u538b\u75c5", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "35", "label": "35", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u5973", "label": "\u5973", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u9ec4\u6d77\u6ce2", "label": "\u9ec4\u6d77\u6ce2", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u5218\u82b3", "label": "\u5218\u82b3", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u5305\u7389\u5029", "label": "\u5305\u7389\u5029", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u4e8c\u7532\u53cc\u80cd\u6cbb\u7597", "label": "\u4e8c\u7532\u53cc\u80cd\u6cbb\u7597", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u62dc\u7cd6\u5e73\u6cbb\u7597", "label": "\u62dc\u7cd6\u5e73\u6cbb\u7597", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u80f0\u5c9b\u7d20\u76ae\u4e0b\u6ce8\u5c04\u6cbb\u7597", "label": "\u80f0\u5c9b\u7d20\u76ae\u4e0b\u6ce8\u5c04\u6cbb\u7597", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u80f0\u5c9b\u7d20\u6cf5\u63a7\u5236\u8840\u7cd6", "label": "\u80f0\u5c9b\u7d20\u6cf5\u63a7\u5236\u8840\u7cd6", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u7279\u6b8a\u68c0\u67e5", "label": "\u7279\u6b8a\u68c0\u67e5", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u5165\u9662\u60c5\u51b5", "label": "\u5165\u9662\u60c5\u51b5", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u51fa\u9662\u8bca\u65ad", "label": "\u51fa\u9662\u8bca\u65ad", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "2\u578b\u7cd6\u5c3f\u75c5\u5e76\u916e\u75c7\u5e76\u5468\u56f4\u8840\u7ba1\u75c5\u53d8\u5e76\u5468\u56f4\u795e\u7ecf\u75c5\u53d8\u5e76\u80be\u810f\u75c5\u53d8\u671f\u5e76\u89c6\u7f51\u819c\u75c5\u53d8", "label": "2\u578b\u7cd6\u5c3f\u75c5\u5e76\u916e\u75c7\u5e76\u5468\u56f4\u8840\u7ba1\u75c5\u53d8\u5e76\u5468\u56f4\u795e\u7ecf\u75c5\u53d8\u5e76\u80be\u810f\u75c5\u53d8\u671f\u5e76\u89c6\u7f51\u819c\u75c5\u53d8", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "2343223", "label": "2343223", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "1101", "label": "1101", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u6d88\u5316\u7cfb\u7edf\u68c0\u67e5", "label": "\u6d88\u5316\u7cfb\u7edf\u68c0\u67e5", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u795e\u7ecf\u7cfb\u7edf\u68c0\u67e5", "label": "\u795e\u7ecf\u7cfb\u7edf\u68c0\u67e5", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u5b9e\u9a8c\u5ba4\u68c0\u67e5", "label": "\u5b9e\u9a8c\u5ba4\u68c0\u67e5", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u8840\u538b\u5347\u9ad8", "label": "\u8840\u538b\u5347\u9ad8", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u6b63\u5e38\u4f53\u6e29", "label": "\u6b63\u5e38\u4f53\u6e29", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u8840\u7cd6\u5347\u9ad8", "label": "\u8840\u7cd6\u5347\u9ad8", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u6c14\u5e73", "label": "\u6c14\u5e73", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u795e\u6e05", "label": "\u795e\u6e05", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u8102\u4ee3\u8c22\u7d0a\u4e71\uff08\u9ad8\u7518\u6cb9\u4e09\u8102\u8840\u75c7\uff09", "label": "\u8102\u4ee3\u8c22\u7d0a\u4e71\uff08\u9ad8\u7518\u6cb9\u4e09\u8102\u8840\u75c7\uff09", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u9ad8\u8840\u538b\u75c53\u7ea7", "label": "\u9ad8\u8840\u538b\u75c53\u7ea7", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u773c\u5e95\u68c0\u67e5", "label": "\u773c\u5e95\u68c0\u67e5", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "GFR\u68c0\u67e5", "label": "GFR\u68c0\u67e5", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u8d85\u58f0\u68c0\u67e5", "label": "\u8d85\u58f0\u68c0\u67e5", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u808c\u7535\u56fe", "label": "\u808c\u7535\u56fe", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u80f8\u7247", "label": "\u80f8\u7247", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u5fc3\u7535\u56fe", "label": "\u5fc3\u7535\u56fe", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u5e26\u836f", "label": "\u5e26\u836f", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u5b9a\u671f\u76d1\u6d4b\u5c3f\u86cb\u767d", "label": "\u5b9a\u671f\u76d1\u6d4b\u5c3f\u86cb\u767d", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u5b9a\u671f\u76d1\u6d4b\u80be\u529f\u80fd", "label": "\u5b9a\u671f\u76d1\u6d4b\u80be\u529f\u80fd", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u5b9a\u671f\u76d1\u6d4bHbA1c", "label": "\u5b9a\u671f\u76d1\u6d4bHbA1c", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u5b9a\u671f\u76d1\u6d4b\u7a7a\u8179\u8840\u7cd6", "label": "\u5b9a\u671f\u76d1\u6d4b\u7a7a\u8179\u8840\u7cd6", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u5c3f\u5e38\u89c4", "label": "\u5c3f\u5e38\u89c4", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u8840\u5e38\u89c4", "label": "\u8840\u5e38\u89c4", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u8840\u8102\u8c03\u8282", "label": "\u8840\u8102\u8c03\u8282", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u80f0\u5c9b\u7d20\u6ce8\u5c04\u6cbb\u7597", "label": "\u80f0\u5c9b\u7d20\u6ce8\u5c04\u6cbb\u7597", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u6cbb\u7597\u7ed3\u679c", "label": "\u6cbb\u7597\u7ed3\u679c", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u51fa\u9662\u65e5\u671f", "label": "\u51fa\u9662\u65e5\u671f", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u5165\u9662\u65e5\u671f", "label": "\u5165\u9662\u65e5\u671f", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "2\u578b\u7cd6\u5c3f\u75c5", "label": "2\u578b\u7cd6\u5c3f\u75c5", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "35\u5c81", "label": "35\u5c81", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u7cd6\u5c3f\u75c5\u996e\u98df\u63a7\u5236\u3001\u836f\u7269\u7528\u6cd5\u3001\u95e8\u8bca\u5b9a\u671f\u68c0\u6d4b", "label": "\u7cd6\u5c3f\u75c5\u996e\u98df\u63a7\u5236\u3001\u836f\u7269\u7528\u6cd5\u3001\u95e8\u8bca\u5b9a\u671f\u68c0\u6d4b", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u4e8e\u9910\u524d5~6mmol/L\uff0c\u9910\u540e7~8mmol/L\u5de6\u53f3", "label": "\u4e8e\u9910\u524d5~6mmol/L\uff0c\u9910\u540e7~8mmol/L\u5de6\u53f3", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u80f0\u5c9b\u7d20\u3001\u62dc\u7cd6\u5e73\u3001\u4e8c\u7532\u53cc\u80cd\u7b49", "label": "\u80f0\u5c9b\u7d20\u3001\u62dc\u7cd6\u5e73\u3001\u4e8c\u7532\u53cc\u80cd\u7b49", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u80f0\u5c9b\u7d20\u6cf5\u63a7\u5236\u8840\u7cd6\uff0c\u80f0\u5c9b\u7d20\u76ae\u4e0b\u6ce8\u5c04\u6cbb\u7597", "label": "\u80f0\u5c9b\u7d20\u6cf5\u63a7\u5236\u8840\u7cd6\uff0c\u80f0\u5c9b\u7d20\u76ae\u4e0b\u6ce8\u5c04\u6cbb\u7597", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u53e3\u5e72\uff0c\u591a\u5c3f\uff0c\u591a\u98df\u4f34\u4f53\u91cd\u4e0b\u964d", "label": "\u53e3\u5e72\uff0c\u591a\u5c3f\uff0c\u591a\u98df\u4f34\u4f53\u91cd\u4e0b\u964d", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u916e\u75c7", "label": "\u916e\u75c7", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u9ad8\u7518\u6cb9\u4e09\u8102\u8840\u75c7", "label": "\u9ad8\u7518\u6cb9\u4e09\u8102\u8840\u75c7", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u76d1\u6d4b\u773c\u5e95", "label": "\u76d1\u6d4b\u773c\u5e95", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u76d1\u6d4b\u80be\u529f\u80fd", "label": "\u76d1\u6d4b\u80be\u529f\u80fd", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u76d1\u6d4bHbALC", "label": "\u76d1\u6d4bHbALC", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u76d1\u6d4b\u8840\u7cd6", "label": "\u76d1\u6d4b\u8840\u7cd6", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u8c03\u6574\u964d\u7cd6\u6cbb\u7597\u65b9\u6848", "label": "\u8c03\u6574\u964d\u7cd6\u6cbb\u7597\u65b9\u6848", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u68c0\u67e5", "label": "\u68c0\u67e5", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u7cd6\u5c3f\u75c5\u996e\u98df\u63a7\u5236", "label": "\u7cd6\u5c3f\u75c5\u996e\u98df\u63a7\u5236", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u80be\u56fe\u66f2\u7ebf\u9ad8\u5cf0\u65f6\u95f4\u53ca\u534a\u6392\u65f6\u95f4\u6b63\u5e38", "label": "\u80be\u56fe\u66f2\u7ebf\u9ad8\u5cf0\u65f6\u95f4\u53ca\u534a\u6392\u65f6\u95f4\u6b63\u5e38", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u89c6\u7f51\u819c\u52a8\u8109\u786c\u5316", "label": "\u89c6\u7f51\u819c\u52a8\u8109\u786c\u5316", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u9888\u52a8\u8109\u53cc\u4fa7\u672a\u89c1\u660e\u663e\u6591\u5757\u5f62\u6210", "label": "\u9888\u52a8\u8109\u53cc\u4fa7\u672a\u89c1\u660e\u663e\u6591\u5757\u5f62\u6210", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "\u53d1\u73b0\u8840\u7cd6\u5347\u9ad8\u5e74\u53e3\u5e72\u591a\u5c3f\u591a\u98df\u4f34\u4f53\u91cd\u4e0b\u964d\u5e74", "label": "\u53d1\u73b0\u8840\u7cd6\u5347\u9ad8\u5e74\u53e3\u5e72\u591a\u5c3f\u591a\u98df\u4f34\u4f53\u91cd\u4e0b\u964d\u5e74", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "2\u578b\u7cd6\u5c3f\u75c5\u548c\u591a\u79cd\u5e76\u53d1\u75c7", "label": "2\u578b\u7cd6\u5c3f\u75c5\u548c\u591a\u79cd\u5e76\u53d1\u75c7", "shape": "dot", "size": 10}, {"color": "#97c2fc", "font": {"color": "white"}, "id": "CGMS", "label": "CGMS", "shape": "dot", "size": 10}]);
+                  edges = new vis.DataSet([{"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u5fc3\u80baX\u7ebf\u672a\u89c1\u660e\u663e\u6d3b\u52a8\u6027\u75c5\u53d8", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u836f\u7269", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u4f4e\u8840\u7cd6\u53cd\u5e94", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "2hBG", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "FBG", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u7761\u7720", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u80c3\u7eb3", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "GFR", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u773c\u79d1\u68c0\u67e5", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u8d85\u58f0", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "2hPG", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "FPG", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u7535\u89e3\u8d28", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u80be\u529f\u80fd", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u809d\u529f", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u8840\u916e", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u8840\u7cd6", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u4f53\u91cd\u4e0b\u964d\u5e74", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u591a\u98df", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u53d1\u73b0\u8840\u7cd6\u5347\u9ad8\u5e74", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "2006\u5e746\u67088\u65e5", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "2006\u5e746\u67083\u65e5", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u4e3b\u6cbb\u533b\u5e08\uff1a\u5218\u82b3", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u4e3b\u4efb\u533b\u5e08\uff1a\u5305\u7389\u5029", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u597d\u8f6c", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u51fa\u9662\u533b\u5631", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u4e8c\u7532\u53cc\u80cd", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u62dc\u7cd6\u5e73", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u80f0\u5c9b\u7d20", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u80f0\u5c9b\u7d20\u6cf5", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u4f4f\u9662", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u4f53\u91cd\u4e0b\u964d", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u591a\u5c3f", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u53e3\u5e72", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u8102\u4ee3\u8c22\u7d0a\u4e71", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u9ad8\u8840\u538b\u75c5", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "35", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u5973", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u9ec4\u6d77\u6ce2", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u5218\u82b3", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u5305\u7389\u5029", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u4e8c\u7532\u53cc\u80cd\u6cbb\u7597", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u62dc\u7cd6\u5e73\u6cbb\u7597", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u80f0\u5c9b\u7d20\u76ae\u4e0b\u6ce8\u5c04\u6cbb\u7597", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u80f0\u5c9b\u7d20\u6cf5\u63a7\u5236\u8840\u7cd6", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u7279\u6b8a\u68c0\u67e5", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u5165\u9662\u60c5\u51b5", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u51fa\u9662\u8bca\u65ad", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "2\u578b\u7cd6\u5c3f\u75c5\u5e76\u916e\u75c7\u5e76\u5468\u56f4\u8840\u7ba1\u75c5\u53d8\u5e76\u5468\u56f4\u795e\u7ecf\u75c5\u53d8\u5e76\u80be\u810f\u75c5\u53d8\u671f\u5e76\u89c6\u7f51\u819c\u75c5\u53d8", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "2343223", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "1101", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u6d88\u5316\u7cfb\u7edf\u68c0\u67e5", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u795e\u7ecf\u7cfb\u7edf\u68c0\u67e5", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u5b9e\u9a8c\u5ba4\u68c0\u67e5", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u8840\u538b\u5347\u9ad8", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u6b63\u5e38\u4f53\u6e29", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u8840\u7cd6\u5347\u9ad8", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u6c14\u5e73", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u795e\u6e05", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u8102\u4ee3\u8c22\u7d0a\u4e71\uff08\u9ad8\u7518\u6cb9\u4e09\u8102\u8840\u75c7\uff09", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u9ad8\u8840\u538b\u75c53\u7ea7", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u773c\u5e95\u68c0\u67e5", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "GFR\u68c0\u67e5", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u8d85\u58f0\u68c0\u67e5", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u808c\u7535\u56fe", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u80f8\u7247", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u5fc3\u7535\u56fe", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u5e26\u836f", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u5b9a\u671f\u76d1\u6d4b\u5c3f\u86cb\u767d", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u5b9a\u671f\u76d1\u6d4b\u80be\u529f\u80fd", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u5b9a\u671f\u76d1\u6d4bHbA1c", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u5b9a\u671f\u76d1\u6d4b\u7a7a\u8179\u8840\u7cd6", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u5c3f\u5e38\u89c4", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u8840\u5e38\u89c4", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u8840\u8102\u8c03\u8282", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u80f0\u5c9b\u7d20\u6ce8\u5c04\u6cbb\u7597", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u6cbb\u7597\u7ed3\u679c", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u51fa\u9662\u65e5\u671f", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u5165\u9662\u65e5\u671f", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "2\u578b\u7cd6\u5c3f\u75c5", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "35\u5c81", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u7cd6\u5c3f\u75c5\u996e\u98df\u63a7\u5236\u3001\u836f\u7269\u7528\u6cd5\u3001\u95e8\u8bca\u5b9a\u671f\u68c0\u6d4b", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u4e8e\u9910\u524d5~6mmol/L\uff0c\u9910\u540e7~8mmol/L\u5de6\u53f3", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u80f0\u5c9b\u7d20\u3001\u62dc\u7cd6\u5e73\u3001\u4e8c\u7532\u53cc\u80cd\u7b49", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u80f0\u5c9b\u7d20\u6cf5\u63a7\u5236\u8840\u7cd6\uff0c\u80f0\u5c9b\u7d20\u76ae\u4e0b\u6ce8\u5c04\u6cbb\u7597", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u53e3\u5e72\uff0c\u591a\u5c3f\uff0c\u591a\u98df\u4f34\u4f53\u91cd\u4e0b\u964d", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u916e\u75c7", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u9ad8\u7518\u6cb9\u4e09\u8102\u8840\u75c7", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u76d1\u6d4b\u773c\u5e95", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u76d1\u6d4b\u80be\u529f\u80fd", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u76d1\u6d4bHbALC", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u76d1\u6d4b\u8840\u7cd6", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u8c03\u6574\u964d\u7cd6\u6cbb\u7597\u65b9\u6848", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u68c0\u67e5", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u7cd6\u5c3f\u75c5\u996e\u98df\u63a7\u5236", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u80be\u56fe\u66f2\u7ebf\u9ad8\u5cf0\u65f6\u95f4\u53ca\u534a\u6392\u65f6\u95f4\u6b63\u5e38", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u89c6\u7f51\u819c\u52a8\u8109\u786c\u5316", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u9888\u52a8\u8109\u53cc\u4fa7\u672a\u89c1\u660e\u663e\u6591\u5757\u5f62\u6210", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "\u53d1\u73b0\u8840\u7cd6\u5347\u9ad8\u5e74\u53e3\u5e72\u591a\u5c3f\u591a\u98df\u4f34\u4f53\u91cd\u4e0b\u964d\u5e74", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "2\u578b\u7cd6\u5c3f\u75c5\u548c\u591a\u79cd\u5e76\u53d1\u75c7", "width": 1}, {"from": "\u5f20\u5c0f\u7ea2", "title": "RELATED_TO", "to": "CGMS", "width": 1}]);
+
+                  nodeColors = {};
+                  allNodes = nodes.get({ returnType: "Object" });
+                  for (nodeId in allNodes) {
+                    nodeColors[nodeId] = allNodes[nodeId].color;
+                  }
+                  allEdges = edges.get({ returnType: "Object" });
+                  // adding nodes and edges to the graph
+                  data = {nodes: nodes, edges: edges};
+
+                  var options = {
+    "configure": {
+        "enabled": false
+    },
+    "edges": {
+        "color": {
+            "inherit": true
+        },
+        "smooth": {
+            "enabled": true,
+            "type": "dynamic"
+        }
+    },
+    "interaction": {
+        "dragNodes": true,
+        "hideEdgesOnDrag": false,
+        "hideNodesOnDrag": false
+    },
+    "physics": {
+        "enabled": true,
+        "stabilization": {
+            "enabled": true,
+            "fit": true,
+            "iterations": 1000,
+            "onlyDynamicEdges": false,
+            "updateInterval": 50
+        }
+    }
+};
+
+                  
+
+
+                  
+
+                  network = new vis.Network(container, data, options);
+
+                  
+
+                  
+
+                  
+
+
+                  
+                      network.on("stabilizationProgress", function(params) {
+                          document.getElementById('loadingBar').removeAttribute("style");
+                          var maxWidth = 496;
+                          var minWidth = 20;
+                          var widthFactor = params.iterations/params.total;
+                          var width = Math.max(minWidth,maxWidth * widthFactor);
+                          document.getElementById('bar').style.width = width + 'px';
+                          document.getElementById('text').innerHTML = Math.round(widthFactor*100) + '%';
+                      });
+                      network.once("stabilizationIterationsDone", function() {
+                          document.getElementById('text').innerHTML = '100%';
+                          document.getElementById('bar').style.width = '496px';
+                          document.getElementById('loadingBar').style.opacity = 0;
+                          // really clean the dom element
+                          setTimeout(function () {document.getElementById('loadingBar').style.display = 'none';}, 500);
+                      });
+                  
+
+                  return network;
+
+              }
+              drawGraph();
+        </script>
+    </body>
+</html>

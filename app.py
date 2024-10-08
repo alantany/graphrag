@@ -1,329 +1,361 @@
+"""
+AI知识问答系统
+"""
+
 import streamlit as st
-from data_processor import set_neo4j_config, initialize_openai, process_data, query_graph, hybrid_search, CURRENT_NEO4J_CONFIG, get_entity_relations, initialize_faiss, process_data_vector, vector_search, hybrid_search_with_vector, faiss_query, get_all_faiss_documents
-import pandas as pd
-from neo4j import GraphDatabase
-import logging
-import io
+from openai import OpenAI
+from sentence_transformers import SentenceTransformer
+import multiprocessing
+import PyPDF2
+import docx
+import faiss
+import tiktoken
+import os
+import pickle
+import numpy as np
+import jieba
+from collections import Counter
+import io  # 添加这一行
 import networkx as nx
 from pyvis.network import Network
 import streamlit.components.v1 as components
-from PyPDF2 import PdfReader
-
-# 设置日志
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# 创建一个StringIO对象来捕获日志输出
-log_capture_string = io.StringIO()
-ch = logging.StreamHandler(log_capture_string)
-ch.setLevel(logging.INFO)
-logger.addHandler(ch)
-
-def display_graph(entities, relations):
-    G = nx.Graph()
-    for entity in entities:
-        G.add_node(entity)
-    for relation in relations:
-        if isinstance(relation, dict):
-            G.add_edge(relation['source'], relation['target'], title=relation['relation'])
-        else:
-            G.add_edge(relation[0], relation[2], title=relation[1])
-    
-    net = Network(notebook=True, width="100%", height="500px", bgcolor="#222222", font_color="white")
-    net.from_nx(G)
-    net.save_graph("graph.html")
-    
-    with open("graph.html", 'r', encoding='utf-8') as f:
-        html_string = f.read()
-    components.html(html_string, height=500)
-
-st.set_page_config(page_title="知识图谱生成系统", layout="wide")
-
-st.title("知识图谱生成系统")
-
-# Neo4j 配置选择
-neo4j_option = st.radio(
-    "选择 Neo4j 连接方式",
-    ("Neo4j Aura", "本地 Neo4j")
+from data_processor import (
+    load_model, vectorize_document, extract_keywords, 
+    search_documents, save_index, load_all_indices, 
+    delete_index, rag_qa, initialize_openai,
+    query_graph, hybrid_search, get_entity_relations,
+    set_neo4j_config, get_neo4j_driver, process_data,
+    generate_final_answer, vector_search, execute_neo4j_query,
+    initialize_faiss  # 添加这一行
 )
 
-st.write(f"选择的连接方式: {neo4j_option}")
+# 在文件顶部的导入语句之后添加
+from data_processor import faiss_id_to_text, faiss_id_counter, faiss_index
 
-if neo4j_option == "Neo4j Aura":
-    config_set = set_neo4j_config("AURA")
-    st.write("已选择 Neo4j Aura 连接")
-else:
-    config_set = set_neo4j_config("LOCAL")
-    st.write("已选择本地 Neo4j 连接")
+# 设置页面配置
+st.set_page_config(
+    page_title="AI知识问答系统",
+    page_icon="🧠",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+    menu_items=None
+)
 
-st.write(f"当前配置: {CURRENT_NEO4J_CONFIG}")
+# 隐藏 Streamlit 默认的菜单、页脚和 Deploy 按钮
+hide_streamlit_style = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    .stDeployButton {display: none;}
+    header {visibility: hidden;}
+    </style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-# 在每次数据库操作之前，确保使用正确的配置
-def get_neo4j_driver():
-    return GraphDatabase.driver(
-        CURRENT_NEO4J_CONFIG["URI"],
-        auth=(CURRENT_NEO4J_CONFIG["USERNAME"], CURRENT_NEO4J_CONFIG["PASSWORD"])
+# 初始化 OpenAI 客户端
+initialize_openai(
+    api_key="sk-1pUmQlsIkgla3CuvKTgCrzDZ3r0pBxO608YJvIHCN18lvOrn",
+    base_url="https://api.chatanywhere.tech/v1"
+)
+
+# 初始化 session state
+if "file_indices" not in st.session_state:
+    st.session_state.file_indices = load_all_indices()
+
+def main():
+    global faiss_id_to_text, faiss_id_counter, faiss_index
+    
+    st.title("AI知识问答系统")
+
+    # 初始化 FAISS
+    try:
+        faiss_index = initialize_faiss()
+        if faiss_index is None:
+            st.error("FAISS 索引初始化失败。请检查 initialize_faiss() 函数。")
+            return
+    except Exception as e:
+        st.error(f"FAISS 索引初始化时发生错误: {str(e)}")
+        return
+
+    # 加载所有索引
+    st.session_state.file_indices = load_all_indices()
+    
+    # 如果有索引，将它们添加到 FAISS 索引中
+    if st.session_state.file_indices:
+        for file_name, (chunks, index) in st.session_state.file_indices.items():
+            for i, chunk in enumerate(chunks):
+                faiss_id_to_text[faiss_id_counter + i] = chunk
+            vectors = index.reconstruct_n(0, index.ntotal)
+            faiss_index.add(vectors)
+        faiss_id_counter += sum(len(chunks) for chunks, _ in st.session_state.file_indices.values())
+
+    # Neo4j 配置选择
+    neo4j_option = st.radio(
+        "选择 Neo4j 连接方式",
+        ("Neo4j Aura", "本地 Neo4j")
     )
 
-# 使用这个函数替换所有直接创建 driver 的地方
-# 例如：
-# driver = get_neo4j_driver()
-# with driver.session() as session:
-#     ...
-# driver.close()
+    st.write(f"选择的连接方式: {neo4j_option}")
 
-if config_set:
-    # 测试数据库连接
-    try:
-        driver = get_neo4j_driver()
-        with driver.session() as session:
-            result = session.run("RETURN 1 AS test")
-            test_value = result.single()["test"]
-            if test_value == 1:
-                st.success(f"成功连接到 Neo4j 数据库 ({CURRENT_NEO4J_CONFIG['URI']})")
-            else:
-                st.error("连接测试失败")
-        driver.close()
-    except Exception as e:
-        st.error(f"连接到 Neo4j 数据库时出错: {str(e)}")
-        st.write(f"当前 URI: {CURRENT_NEO4J_CONFIG['URI']}")
-        st.write(f"用户名: {CURRENT_NEO4J_CONFIG['USERNAME']}")
-else:
-    st.error("Neo4j 配置设置失败")
+    if neo4j_option == "Neo4j Aura":
+        CURRENT_NEO4J_CONFIG = set_neo4j_config("AURA")
+        st.write("已选择 Neo4j Aura 连接")
+    else:
+        CURRENT_NEO4J_CONFIG = set_neo4j_config("LOCAL")
+        st.write("已选择本地 Neo4j 连接")
 
-# OpenAI API 配置
-openai_api_key = "sk-1pUmQlsIkgla3CuvKTgCrzDZ3r0pBxO608YJvIHCN18lvOrn"
-openai_base_url = "https://api.chatanywhere.tech/v1"
+    st.write(f"配置设置结果: {CURRENT_NEO4J_CONFIG is not None}")
+    st.write(f"当前配置: {CURRENT_NEO4J_CONFIG}")
 
-# 初始化 OpenAI
-initialize_openai(openai_api_key, openai_base_url)
-
-# 初始化 FAISS
-initialize_faiss()
-
-# 创建三个标签页
-tab1, tab2, tab3 = st.tabs(["文档上传", "知识库检索", "数据库查询"])
-
-# TAB1: 文档上传
-with tab1:
-    st.header("文档上传")
-    uploaded_file = st.file_uploader("选择一个文本文件或PDF文件", type=["txt", "pdf"])
-
-    if uploaded_file is not None:
-        if uploaded_file.type == "text/plain":
-            content = uploaded_file.read().decode("utf-8")
-        elif uploaded_file.type == "application/pdf":
-            pdf_reader = PdfReader(uploaded_file)
-            content = ""
-            for page in pdf_reader.pages:
-                content += page.extract_text()
-        else:
-            st.error("不支持的文件类型")
-            content = None
-
-        if content:
-            st.text_area("文件内预览", content[:500], height=200)  # 显示文件内容的前500个字符
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                if st.button("上传到图数据库"):
-                    with st.spinner("正在处理并上传到图数据库..."):
-                        result = process_data(content)
-                    st.success("处理完成并上传到图数据库！")
-                    st.subheader("处理结果")
-                    st.write(f"处理了 {len(result['entities'])} 个实体和 {len(result['relations'])} 个关系")
-
-                    # 显示图
-                    st.subheader("知识图谱可视化")
-                    display_graph(result['entities'], result['relations'])
-
-                    # 日志记录（不在页面显示）
-                    logger.info("实体：")
-                    for entity in result['entities']:
-                        logger.info(f"- {entity}")
-                    
-                    logger.info("关系：")
-                    for relation in result['relations']:
-                        if isinstance(relation, dict):
-                            logger.info(f"- {relation['source']} {relation['relation']} {relation['target']}")
-                        else:
-                            logger.info(f"- {relation[0]} {relation[1]} {relation[2]}")
-
-            with col2:
-                if st.button("上传到向量数据库"):
-                    with st.spinner("正在处理并上传到向量数据库..."):
-                        result = process_data_vector(content)
-                    st.success("处理完成并上传到向量数据库！")
-                    st.subheader("处理结果")
-                    st.write(f"处理了 {len(result['entities'])} 个实体和 {len(result['relations'])} 个关系")
-
-                    # 日志记录（不在页面显示）
-                    logger.info("向量数据库 - 实体：")
-                    for entity in result['entities']:
-                        logger.info(f"- {entity}")
-                    
-                    logger.info("向量数据库 - 关系：")
-                    for relation in result['relations']:
-                        if isinstance(relation, dict):
-                            logger.info(f"- {relation['source']} {relation['relation']} {relation['target']}")
-                        else:
-                            logger.info(f"- {relation[0]} {relation[1]} {relation[2]}")
-
-# TAB2: 知识库检索
-with tab2:
-    st.header("知识库检索")
-    
-    search_type = st.radio("选择检索方式", ["图数据检索", "向量数据检索", "混合检索"])
-    
-    if search_type == "图数据检索":
-        st.subheader("图数据检索")
-        
-        # 基于图的问答
-        with st.form(key='qa_form'):
-            qa_query = st.text_input("输入您的问题", key="question_input")
-            submit_button = st.form_submit_button(label='获取答案')
-
-        if submit_button and qa_query:
-            with st.spinner("正在思考..."):
-                answer = hybrid_search(qa_query)
-            st.subheader("回答")
-            st.write(answer)
-
-        # 查看特定实体的相关信息
-        st.subheader("查看特定实体的相关信息")
-
-        def query_entity(entity_name):
-            if entity_name:
-                with st.spinner(f"正在查询 {entity_name} 的相关信息..."):
-                    entity_info = get_entity_relations(entity_name)
-                st.subheader(f"{entity_name} 的相关信息")
-                if entity_info:
-                    # 准备图形数据
-                    entities = set([entity_name])
-                    relations = []
-                    for info in entity_info:
-                        if info['Related']:
-                            entities.add(info['Related'])
-                            relations.append({
-                                'source': info['Entity'],
-                                'relation': info['RelationType'] or info['Relation'],
-                                'target': info['Related']
-                            })
-                    
-                    # 显示图形
-                    st.subheader("实体关系图")
-                    display_graph(list(entities), relations)
-                    
-                    # 同时保留表格显示，以便查看详细信息
-                    st.subheader("详细信息")
-                    df = pd.DataFrame(entity_info)
-                    st.dataframe(df)
+    if CURRENT_NEO4J_CONFIG:
+        # 测试数据库连接
+        try:
+            driver = get_neo4j_driver()
+            with driver.session() as session:
+                result = session.run("RETURN 1 AS test")
+                test_value = result.single()["test"]
+                if test_value == 1:
+                    st.success(f"成功连接到 Neo4j 数据库 ({CURRENT_NEO4J_CONFIG['URI']})")
                 else:
-                    st.write(f"没有找到与 {entity_name} 相关的信息。")
+                    st.error("连接测试失败")
+            driver.close()
+        except Exception as e:
+            st.error(f"连接 Neo4j 数据库时出错: {str(e)}")
+            st.write(f"当前配置: {CURRENT_NEO4J_CONFIG}")
+    else:
+        st.error("Neo4j 配置无效或未设置")
 
-        with st.form(key='entity_form'):
-            entity_name = st.text_input("输入实体名称（例如：张小红）", key="entity_input")
-            entity_submit_button = st.form_submit_button(label='查询实体信息')
+    # 创建三个标签页
+    tab1, tab2, tab3 = st.tabs(["文档上传", "知识库问答", "数据库检索"])
 
-        if entity_submit_button and entity_name:
-            query_entity(entity_name)
-    
-    elif search_type == "向量数据检索":
-        st.subheader("向量数据检索")
-        vector_query = st.text_input("输入您的问题（向量检索）")
-        if st.button("搜索（向量）"):
-            with st.spinner("正在搜索..."):
-                results = vector_search(vector_query)
-            st.subheader("搜索结果")
-            for result in results:
-                st.write(f"- {result}")
-    
-    else:  # 混合检索
-        st.subheader("混合检索")
-        hybrid_query = st.text_input("输入您的问题（混合检索）")
-        if st.button("搜索（混合）"):
-            with st.spinner("正在搜索..."):
-                answer = hybrid_search_with_vector(hybrid_query)
-            st.subheader("回答")
-            st.write(answer)
-
-# TAB3: 数据库查询
-with tab3:
-    st.header("数据库查询")
-    
-    query_type = st.radio("选择查询类型", ["Cypher 查询", "FAISS 查询"])
-    
-    if query_type == "Cypher 查询":
-        cypher_query = st.text_area("输入 Cypher 查询", height=100)
+    with tab1:
+        st.header("文档上传")
         
-        if st.button("执行 Cypher 查询"):
-            if cypher_query:
-                try:
-                    driver = get_neo4j_driver()
-                    
-                    with driver.session() as session:
-                        result = session.run(cypher_query)
-                        data = result.data()
-                        
-                        if data:
-                            st.subheader("查询结果")
-                            df = pd.DataFrame(data)
-                            st.dataframe(df)
-                            
-                            # 如果结果包含节点和关系，可以尝试可视化
-                            if 'n' in df.columns and 'r' in df.columns:
-                                st.subheader("结果可视化")
-                                nodes = set()
-                                edges = []
-                                for _, row in df.iterrows():
-                                    if 'n' in row and hasattr(row['n'], 'get'):
-                                        nodes.add(row['n'].get('name', 'Unknown'))
-                                    if 'm' in row and hasattr(row['m'], 'get'):
-                                        nodes.add(row['m'].get('name', 'Unknown'))
-                                    if 'r' in row and hasattr(row['r'], 'get'):
-                                        edges.append((row['n'].get('name', 'Unknown'), 
-                                                      row['m'].get('name', 'Unknown'), 
-                                                      row['r'].get('type', 'Unknown')))
-                                
-                                display_graph(list(nodes), edges)
-                        else:
-                            st.write("查询没有返回结果。这可能是因为执行了管理操作（如创建索引），或者查询没有匹配到任何数据。")
-                            
-                            # 添加索引查询
-                            st.subheader("当前数据库索引")
-                            indexes = session.run("SHOW INDEXES")
-                            index_data = indexes.data()
-                            if index_data:
-                                st.dataframe(pd.DataFrame(index_data))
-                            else:
-                                st.write("数据库中没有索引。")
-                    
-                    driver.close()
+        # 设置最大token数
+        max_tokens = 4096
+
+        # 多文件上传
+        uploaded_files = st.file_uploader("上传文档", type=["pdf", "docx", "txt"], accept_multiple_files=True)
+
+        if uploaded_files:
+            for uploaded_file in uploaded_files:
+                content = uploaded_file.read()
+                if uploaded_file.type == "application/pdf":
+                    pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
+                    content = ""
+                    for page in pdf_reader.pages:
+                        content += page.extract_text()
+                elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                    doc = docx.Document(io.BytesIO(content))
+                    content = "\n".join([para.text for para in doc.paragraphs])
+                else:
+                    content = content.decode('utf-8')
                 
-                except Exception as e:
-                    st.error(f"执行查询时发生错误: {str(e)}")
-            else:
-                st.warning("请输入 Cypher 查询。")
-    
-    else:  # FAISS 查询
-        faiss_query_type = st.radio("选择 FAISS 查询类型", ["相似性搜索", "查看所有文档"])
+                st.write(f"文件 '{uploaded_file.name}' 已上传")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if st.button("加载到图数据库", key=f"graph_{uploaded_file.name}"):
+                        with st.spinner(f"正在处理文档并加载到图数据库: {uploaded_file.name}..."):
+                            result = process_data(content)
+                        st.success(f"文档 {uploaded_file.name} 已成功加载到图数据库！")
+                        st.write(f"处理了 {len(result['entities'])} 个实体和 {len(result['relations'])} 个关系")
+                        
+                        # 显示处理结果的详细信息
+                        with st.expander("查看详细处理结果"):
+                            st.subheader("实体:")
+                            for entity in result['entities']:
+                                st.write(f"- {entity}")
+                            st.subheader("关系:")
+                            for relation in result['relations']:
+                                st.write(f"- {relation['source']} --[{relation['relation']}]--> {relation['target']}")
+                
+                with col2:
+                    if st.button("加载到向量数据库", key=f"vector_{uploaded_file.name}"):
+                        with st.spinner(f"正在处理文档并加载到向量数据库: {uploaded_file.name}..."):
+                            chunks, index = vectorize_document(content, max_tokens)
+                            st.session_state.file_indices[uploaded_file.name] = (chunks, index)
+                            save_index(uploaded_file.name, chunks, index)
+                        st.success(f"文档 {uploaded_file.name} 已成功加载到向量数据库！")
+                        st.write(f"向 FAISS 向量数据库添加了 {len(chunks)} 个文本段落")
+
+        # 显示已处理的文档并添加删除按钮
+        st.subheader("已处理文档:")
+        for file_name in list(st.session_state.file_indices.keys()):
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.write(f"• {file_name}")
+            with col2:
+                if st.button("删除", key=f"delete_{file_name}"):
+                    del st.session_state.file_indices[file_name]
+                    delete_index(file_name)
+                    st.success(f"文档 {file_name} 已删除！")
+                    st.rerun()
+
+    with tab2:
+        st.header("知识库问答")
         
-        if faiss_query_type == "相似性搜索":
-            faiss_query_input = st.text_input("输入 FAISS 查询")
-            k = st.slider("选择返回结果数量", min_value=1, max_value=20, value=5)
-            
-            if st.button("执行 FAISS 查询"):
-                if faiss_query_input:
-                    results = faiss_query(faiss_query_input, k)
-                    st.subheader("FAISS 查询结果")
-                    for result in results:
-                        st.write(f"ID: {result['id']}, 文本: {result['text']}, 距离: {result['distance']}")
+        # 选择答类型
+        qa_type = st.radio("选择问答类型", ["向量数据库问答", "图数据库问答", "混合问答"])
+        
+        if qa_type == "向量数据库问答":
+            # 向量数据库问答部分
+            st.subheader("向量数据库问答")
+            vector_query = st.text_input("请输入您的问题（向量数据库）")
+            if st.button("提交问题（向量）"):
+                if vector_query:
+                    with st.spinner("正在查询..."):
+                        answer, sources, excerpt = rag_qa(vector_query, st.session_state.file_indices)
+                    st.write("回答：", answer)
+                    if sources:
+                        st.write("参考来源：")
+                        for source, _ in sources:
+                            st.write(f"- {source}")
+                    if excerpt:
+                        st.write("相关原文：")
+                        st.write(excerpt)
                 else:
-                    st.warning("请输入 FAISS 查询。")
+                    st.warning("请入问题")
+        
+        elif qa_type == "图数据库问答":
+            # 图数据库问答部分
+            st.subheader("图数据库问答")
+            graph_query = st.text_input("请输入您的问题（图数据库）")
+            if st.button("提交问题（图）"):
+                if graph_query:
+                    with st.spinner("正在查询..."):
+                        answer = hybrid_search(graph_query)
+                    st.write("回答：", answer)
+                else:
+                    st.warning("请输入问题")
+        
         else:
-            if st.button("查看所有 FAISS 文档"):
-                all_documents = get_all_faiss_documents()
-                st.subheader("FAISS 中的所有文档")
-                for doc in all_documents:
-                    st.write(f"ID: {doc['id']}, 文本: {doc['text']}")
+            # 混合问答部分
+            st.subheader("混合问答")
+            hybrid_query = st.text_input("请输入您的问题（混合问答）")
+            if st.button("提交问题（混合）"):
+                if hybrid_query:
+                    with st.spinner("正在查询..."):
+                        # 图数据库查询
+                        graph_answer = hybrid_search(hybrid_query)
+                        
+                        # 向量数据库查询
+                        vector_answer, sources, excerpt = rag_qa(hybrid_query, st.session_state.file_indices)
+                        
+                        # 组合结果
+                        combined_context = f"图数据库回答：{graph_answer}\n\n向量数据库回答：{vector_answer}"
+                        if excerpt:
+                            combined_context += f"\n\n相关原文：{excerpt}"
+                        
+                        # 使用大模型生成最终答案
+                        final_answer = generate_final_answer(hybrid_query, combined_context)
+                        
+                        st.write("最终回答：", final_answer)
+                        st.write("图数据库回答：", graph_answer)
+                        st.write("向量数据库回答：", vector_answer)
+                        if sources:
+                            st.write("参考来源：")
+                            for source, _ in sources:
+                                st.write(f"- {source}")
+                        if excerpt:
+                            st.write("相关原文：")
+                            st.write(excerpt)
+                else:
+                    st.warning("请输入问题")
+
+        # 添加关键词搜索功能
+        st.subheader("关键词搜索")
+        search_keywords = st.text_input("输入关键词（用空格分隔）")
+        if search_keywords:
+            keywords = search_keywords.split()
+            relevant_docs = search_documents(keywords, st.session_state.file_indices)
+            if relevant_docs:
+                st.write("相关文档：")
+                for doc in relevant_docs:
+                    st.write(f"• {doc}")
+                # 存储相关文档到 session state
+                st.session_state.relevant_docs = relevant_docs
+            else:
+                st.write("没有找到相关文档。")
+                st.session_state.relevant_docs = None
+
+    with tab3:
+        st.header("数据库检索")
+        
+        search_type = st.radio("选择搜索类型", ["图数据库搜索", "向量数据库搜索", "Neo4j 命令执行"])
+        
+        if search_type == "图数据库搜索":
+            st.subheader("图数据库搜索")
+            graph_query = st.text_input("输入搜索关键词")
+            if st.button("执行图数据库搜索"):
+                if graph_query:
+                    with st.spinner("正在搜索图数据库..."):
+                        entities, relations, contents = query_graph(graph_query)
+                    if entities or relations:
+                        st.success("搜索完成！")
+                        st.write("找到的实体:")
+                        st.write(", ".join(entities))
+                        st.write("相关关系:")
+                        for relation in relations:
+                            st.write(f"{relation['source']} --[{relation['relation']}]--> {relation['target']}")
+                        
+                        # 创建并显示关系图
+                        G = nx.Graph()
+                        for entity in entities:
+                            G.add_node(entity)
+                        for relation in relations:
+                            G.add_edge(relation['source'], relation['target'], title=relation['relation'])
+                        
+                        net = Network(notebook=True, width="100%", height="500px", bgcolor="#222222", font_color="white")
+                        net.from_nx(G)
+                        net.save_graph("graph.html")
+                        
+                        with open("graph.html", 'r', encoding='utf-8') as f:
+                            html_string = f.read()
+                        components.html(html_string, height=600)
+                    else:
+                        st.warning("没有找到相关信息。")
+                else:
+                    st.warning("请输入搜索关键词。")
+
+        elif search_type == "向量数据库搜索":
+            st.subheader("向量数据库搜索")
+            vector_query = st.text_input("输入搜索关键词")
+            if st.button("执行向量数据库搜索"):
+                if vector_query:
+                    with st.spinner("正在搜索向量数据库..."):
+                        results = vector_search(vector_query, k=5)  # 假设 k=5，返前5个最相似的结果
+                    if results:
+                        st.success("搜索完成！")
+                        for i, result in enumerate(results, 1):
+                            st.write(f"结果 {i}:")
+                            st.write(f"相似度: {1 - result['distance']:.4f}")
+                            st.write(f"内容: {result['text'][:200]}...")  # 只显示前200个字符
+                            st.write("---")
+                    else:
+                        st.warning("没有找到相关信息。")
+                else:
+                    st.warning("请输入搜索关键词。")
+
+        else:  # Neo4j 命令执行
+            st.subheader("Neo4j 命令执行")
+            cypher_query = st.text_area("输入 Cypher 查询语句")
+            if st.button("执行 Neo4j 查询"):
+                if cypher_query:
+                    with st.spinner("正在执行 Neo4j 查询..."):
+                        try:
+                            results = execute_neo4j_query(cypher_query)
+                            if results:
+                                st.success("查询执行成功！")
+                                df = pd.DataFrame(results)
+                                st.dataframe(df)
+                            else:
+                                st.info("查询执行成功，但没有返回结果。")
+                        except Exception as e:
+                            st.error(f"执行查询时发生错误: {str(e)}")
+                else:
+                    st.warning("请输入 Cypher 查询语句。")
+
+if __name__ == "__main__":
+    main()
