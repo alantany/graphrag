@@ -220,7 +220,7 @@ def rag_qa(query, file_indices, relevant_docs=None):
     )
     answer = response.choices[0].message.content
     
-    # 更���活地处理回格式
+    # 更���理回格式
     if "相关原文" in answer:
         answer_parts = answer.split("相关原文：", 1)
         main_answer = answer_parts[0].strip()
@@ -317,7 +317,7 @@ def process_data(content):
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "你是一个医疗信息提取助手，擅长医疗记录中提取体和关系请尽可能详地提取所有相关信息。"},
+            {"role": "system", "content": "你是一个医疗信息提取助手，擅长医疗记录中提取体和关系请尽可能详地提取所相关信息。"},
             {"role": "user", "content": prompt}
         ]
     )
@@ -605,7 +605,7 @@ def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, 
             {"role": "system", "content": "你是一个智能助手，能够综合分析来自不同数据源的信息，并提供准确、全面的回答。你需要仔细考虑所有提供的信息，特别是要注意全文检索的结果数量和内容。"},
             {"role": "user", "content": prompt}
         ],
-        max_tokens=800  # 增加 token 限制以允许更详细的回答
+        max_tokens=800  # 增加 token 限以允许更详细的回答
     )
     
     return response.choices[0].message.content.strip()
@@ -657,7 +657,10 @@ __all__ = [
     'faiss_index',
     'faiss_id_to_text',
     'faiss_id_counter',
-    'QueryParser'
+    'QueryParser',
+    'delete_graph_data',
+    'delete_vector_data',
+    'delete_fulltext_index',
 ]
 
 def fused_graph_vector_search(query, graph_db, vector_db):
@@ -784,7 +787,7 @@ def extract_core_keywords(query):
             从以下问题中提取2-3个最重要的核心关键词。这些关键词应该是搜索医疗文档时最有可能找到相关信息的词。
             
             注意：
-            1. 常见词如"患者"、"病人"、"医生"、"医院"等不应被视为核心关键词，除非它们是问题的主要焦点。
+            1. 常见词"患者"、"病人"、"医生"、"医院"等不应被视为核心关键词，除非它们是问题的主要焦点。
             2. 优先选择专业医学术语、症状描述或特定的疾病名称。
             3. 关键词可以是问题中明确出现的词，也可以是根据问题内容推断出的相关医学术语。
             4. 如果问题中没有明确的医学术语，可以选择问题中最具体、最相关的词语。
@@ -820,3 +823,44 @@ def check_index_content(term):
         for hit in results:
             logger.info(f"文档: {hit['title']}")
             logger.info(f"内容片段: {hit.highlights('content')}")
+
+def delete_graph_data(file_name):
+    driver = get_neo4j_driver()
+    with driver.session() as session:
+        # 删除与文件相关的所有节点和关系
+        session.run("""
+        MATCH (n:Entity)
+        WHERE n.source = $file_name
+        DETACH DELETE n
+        """, file_name=file_name)
+    logger.info(f"已删除图数据库中与文件 {file_name} 相关的数据")
+
+def delete_vector_data(file_name):
+    global faiss_index, faiss_id_to_text, faiss_id_counter
+    if file_name in st.session_state.file_indices:
+        chunks, _ = st.session_state.file_indices[file_name]
+        # 从 faiss_id_to_text 中删除相关条目
+        faiss_id_to_text = {k: v for k, v in faiss_id_to_text.items() if v not in chunks}
+        # 重建 FAISS 索引
+        new_index = faiss.IndexFlatL2(384)  # 384 是向量维度，根据实际情况调整
+        new_vectors = []
+        new_id_to_text = {}
+        new_id = 0
+        for id, text in faiss_id_to_text.items():
+            vector = faiss_index.reconstruct(id)
+            new_vectors.append(vector)
+            new_id_to_text[new_id] = text
+            new_id += 1
+        new_index.add(np.array(new_vectors))
+        faiss_index = new_index
+        faiss_id_to_text = new_id_to_text
+        faiss_id_counter = new_id
+    logger.info(f"已删除向量数据库中与文件 {file_name} 相关的数据")
+
+def delete_fulltext_index(file_name):
+    if os.path.exists("fulltext_index"):
+        ix = open_dir("fulltext_index")
+        writer = ix.writer()
+        writer.delete_by_term('title', file_name)
+        writer.commit()
+    logger.info(f"已删除全文索引中与文件 {file_name} 相关的数据")

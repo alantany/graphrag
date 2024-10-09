@@ -28,7 +28,7 @@ from data_processor import (
     set_neo4j_config, get_neo4j_driver, process_data,
     generate_final_answer, vector_search, execute_neo4j_query,
     initialize_faiss, create_fulltext_index, search_fulltext_index,
-    open_dir
+    open_dir, delete_graph_data, delete_vector_data, delete_fulltext_index
 )
 from whoosh.qparser import QueryParser
 
@@ -154,7 +154,7 @@ def main():
         max_tokens = 4096
 
         # 多文件上传
-        uploaded_files = st.file_uploader("上传文档", type=["pdf", "docx", "txt"], accept_multiple_files=True)
+        uploaded_files = st.file_uploader("传文档", type=["pdf", "docx", "txt"], accept_multiple_files=True)
 
         if uploaded_files:
             for uploaded_file in uploaded_files:
@@ -228,9 +228,21 @@ def main():
                 st.write(f"• {file_name}")
             with col2:
                 if st.button("删除", key=f"delete_{file_name}"):
-                    del st.session_state.file_indices[file_name]
-                    delete_index(file_name)
-                    st.success(f"文档 {file_name} 已删除！")
+                    with st.spinner(f"正在删除文档 {file_name} 的所有相关数据..."):
+                        # 删除向量数据库中的数据
+                        delete_vector_data(file_name)
+                        del st.session_state.file_indices[file_name]
+                        
+                        # 删除图数据库中的数据
+                        delete_graph_data(file_name)
+                        
+                        # 删除全文索引中的数据
+                        delete_fulltext_index(file_name)
+                        
+                        # 删除本地索引文件
+                        delete_index(file_name)
+                    
+                    st.success(f"文档 {file_name} 及其所有相关数据已成功删除！")
                     st.rerun()
 
         # 在适当的位置添加（例如在 tab1 中文件上传后）
