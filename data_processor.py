@@ -21,12 +21,11 @@ from whoosh.fields import *
 from whoosh.qparser import QueryParser, OrGroup, AndGroup, MultifieldParser
 from whoosh.query import And, Or, Term, FuzzyTerm
 from whoosh.analysis import Analyzer, Token
-from gensim.models import KeyedVectors
-from whoosh.analysis import Analyzer, Token
 from whoosh.fields import Schema, TEXT, ID
 from whoosh.index import create_in, open_dir
 from whoosh.qparser import QueryParser
 from whoosh.searching import NoTermsException
+from scipy.linalg import get_blas_funcs
 
 # Neo4j连接配置
 AURA_URI = "neo4j+s://b76a61f2.databases.neo4j.io:7687"
@@ -101,7 +100,7 @@ def initialize_faiss():
             faiss_index = faiss.IndexFlatL2(384)  # 384是向量维度,根据实际模型调整
             logger.info("FAISS 索引成功初始化")
         except Exception as e:
-            logger.error(f"FAISS 索引初始化失败: {str(e)}")
+            logger.error(f"FAISS 索��初始化失败: {str(e)}")
             raise
     else:
         logger.info("FAISS 索引已经存在，跳过初始化")
@@ -220,7 +219,7 @@ def rag_qa(query, file_indices, relevant_docs=None):
     )
     answer = response.choices[0].message.content
     
-    # 更���理回格式
+    # 更理回格式
     if "相关原文" in answer:
         answer_parts = answer.split("相关原文：", 1)
         main_answer = answer_parts[0].strip()
@@ -300,7 +299,7 @@ def process_data(content):
     实体应包括但不限于：患者姓名、年龄、性别、诊断、症状、检查、治疗、药物、生理指标等。
     关系应描述实体之间的所有可能联系，如"患有""接受检查"、"使用药物"、"属性"等。
     请确保每个实体都至少有一个关系。对于没有明确关系的性（如性别、年龄等），请使用"属性"作为关系类型。
-    请尽可能详细地取关系，不要遗任何可能的连接。
+    请尽可能详细地取关系，不要遗任可能的连接。
     请以JSON格式输出，格式如下：
     {{
         "entities": ["实体1", "实体2", ...],
@@ -592,7 +591,7 @@ def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, 
     5. 如果存在不确定性，请说明原因并给出建议
 
     注意：
-    - 图数据库的信息通常更精确，但可能不完整
+    - 图数据库的��息通常更精确，但可能不完整
     - 全文检索结果可能提供更广泛的上下文，请充分利用这些信息
     - 向量数据库的结果可能提供额外的相关信息
 
@@ -602,7 +601,7 @@ def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, 
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "你是一个智能助手，能够综合分析来自不同数据源的信息，并提供准确、全面的回答。你需要仔细考虑所有提供的信息，特别是要注意全文检索的结果数量和内容。"},
+            {"role": "system", "content": "你是一个智能助手，能够综合分析来自不同数据源的信息，并提供准确、全面的回。你需要仔细考虑所有提供的信息，特别是要注意全文检索的结果数量和内容。"},
             {"role": "user", "content": prompt}
         ],
         max_tokens=800  # 增加 token 限以允许更详细的回答
@@ -833,7 +832,7 @@ def delete_graph_data(file_name):
         WHERE n.source = $file_name
         DETACH DELETE n
         """, file_name=file_name)
-    logger.info(f"已删除图数据库中与文件 {file_name} 相关的数据")
+    logger.info(f"已删除图数据库中与文件 {file_name} 关的数据")
 
 def delete_vector_data(file_name):
     global faiss_index, faiss_id_to_text, faiss_id_counter
