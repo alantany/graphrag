@@ -26,6 +26,7 @@ from whoosh.analysis import Analyzer, Token
 from whoosh.fields import Schema, TEXT, ID
 from whoosh.index import create_in, open_dir
 from whoosh.qparser import QueryParser
+from whoosh.searching import NoTermsException
 
 # Neo4j连接配置
 AURA_URI = "neo4j+s://b76a61f2.databases.neo4j.io:7687"
@@ -219,8 +220,8 @@ def rag_qa(query, file_indices, relevant_docs=None):
     )
     answer = response.choices[0].message.content
     
-    # 更灵活地处理回格式
-    if "相关原文：" in answer:
+    # 更���活地处理回格式
+    if "相关原文" in answer:
         answer_parts = answer.split("相关原文：", 1)
         main_answer = answer_parts[0].strip()
         relevant_excerpt = answer_parts[1].strip()
@@ -397,7 +398,7 @@ def process_data(content):
             RETURN count(*)
             """, name=str(entity).strip(), content=content)
             count = result.single()[0]
-            logger.info(f"创建或更新实��: {entity}, : {count}")
+            logger.info(f"创建或更新实: {entity}, : {count}")
         
         # 创建
         for relation in relations:
@@ -534,7 +535,7 @@ def query_graph_with_entities(entities):
         driver.close()
 
 def get_entity_relations(entity_name):
-    logger.info(f"查询实体 {entity_name} 的相关信息")
+    logger.info(f"查询实体 {entity_name} 的关信息")
     driver = GraphDatabase.driver(
         CURRENT_NEO4J_CONFIG["URI"],
         auth=(CURRENT_NEO4J_CONFIG["USERNAME"], CURRENT_NEO4J_CONFIG["PASSWORD"])
@@ -564,37 +565,47 @@ def get_neo4j_driver():
         auth=(CURRENT_NEO4J_CONFIG["USERNAME"], CURRENT_NEO4J_CONFIG["PASSWORD"])
     )
 
-def generate_final_answer(query, graph_answer, vector_answer, excerpt, graph_entities, graph_relations):
+def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, excerpt, graph_entities, graph_relations):
     prompt = f"""
-    基于以下信息，请回答问题并提供详细的推理过程和证据来源
+    基于以下信息，请回答问题并提供详细的推理过程和证据来源：
 
     问题：{query}
 
-    图数据库回答（先考虑）：{graph_answer}
+    图数据库回答：{graph_answer}
     图数据库实体：{', '.join(graph_entities)}
-    数据库关系：{', '.join([f"{r['source']} --[{r['relation']}]--> {r['target']}" for r in graph_relations])}
+    图数据库关系：{', '.join([f"{r['source']} --[{r['relation']}]--> {r['target']}" for r in graph_relations])}
 
-    量数据库回答（用于补充）：{vector_answer}
+    向量数据库回答：{vector_answer}
+
+    全文检索结果：
+    {' '.join([f"文档: {result['title']}, 内容: {result['content']}" for result in fulltext_results[:5]])}
+
+    全文检索匹配文档数量：{len(fulltext_results)}
 
     相关原文：{excerpt}
 
     请提供一个综合的回答，包括：
-    1. 直接答问题优先使用图数据库��精确信息
-    2. 如果图数据库信息不足，使用向量数据库信息进补充
-    3. 细的推理过程
-    4. 使用的证据及其来源
-    5. 如果存在不确定性或矛盾，请说明原因并给出议
+    1. 直接回答问题，综合考虑所有数据源的信息
+    2. 详细的推理过程，解释如何得出结论
+    3. 使用的证据及其来源（包括图数据库、向量数据库和全文检索）
+    4. 如果不同数据源之间存在矛盾，请指出并解释可能的原因
+    5. 如果存在不确定性，请说明原因并给出建议
 
-    注意：图数据库的信息应该被视为更可靠和确的来源。
+    注意：
+    - 图数据库的信息通常更精确，但可能不完整
+    - 全文检索结果可能提供更广泛的上下文，请充分利用这些信息
+    - 向量数据库的结果可能提供额外的相关信息
+
+    请确保回答全面且准确，不要忽视任何重要信息。
     """
     
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "你是一个智能助手，能够综合分析来自不同数据源的信息，并提供准确、全面的回答。优先考虑图数据库的精确信息。"},
+            {"role": "system", "content": "你是一个智能助手，能够综合分析来自不同数据源的信息，并提供准确、全面的回答。你需要仔细考虑所有提供的信息，特别是要注意全文检索的结果数量和内容。"},
             {"role": "user", "content": prompt}
         ],
-        max_tokens=500
+        max_tokens=800  # 增加 token 限制以允许更详细的回答
     )
     
     return response.choices[0].message.content.strip()
@@ -695,8 +706,9 @@ class OpenAIAnalyzer(Analyzer):
             yield Token(text=t, pos=len(t))
 
 def create_fulltext_index(content, file_name):
-    logger.info(f"开始为文件 {file_name} 创建或更新全文索引")
+    logger.info(f"开始为文件 {file_name} 创建或更新全文索")
     logger.info(f"文件内容长度: {len(content)}")
+    logger.info(f"文件内容前200字符: {content[:200]}")
     
     if not os.path.exists("fulltext_index"):
         os.mkdir("fulltext_index")
@@ -710,24 +722,18 @@ def create_fulltext_index(content, file_name):
         ix = open_dir("fulltext_index")
     
     writer = ix.writer()
-    
-    # 将内容分成较小的块进行处理
-    chunk_size = 1000  # 可以根据需要调整
-    for i in range(0, len(content), chunk_size):
-        chunk = content[i:i+chunk_size]
-        writer.add_document(title=f"{file_name}_chunk_{i//chunk_size}", content=chunk)
-    
+    writer.add_document(title=file_name, content=content)
     writer.commit()
     
     logger.info(f"全文索引更新完成，文件名: {file_name}")
     
     # 验证索引内容
     with ix.searcher() as searcher:
-        results = searcher.search(QueryParser("title", ix.schema).parse(file_name))
+        results = searcher.search(Term("title", file_name))
         if results:
             logger.info(f"成功检索到文档: {file_name}")
-            logger.info(f"索引中的文档内容长度: {sum(len(hit['content']) for hit in results)}")
-            logger.info(f"索引中的第一个文档块内容前200字符: {results[0]['content'][:200]}")
+            logger.info(f"索引中的文档内容长度: {len(results[0]['content'])}")
+            logger.info(f"索引中的文档内容前200字符: {results[0]['content'][:200]}")
         else:
             logger.warning(f"无法检索到文档: {file_name}")
     
@@ -746,13 +752,26 @@ def search_fulltext_index(query):
         logger.info(f"提取的核心关键词: {keywords}")
 
         # 构建查询
-        query_parser = MultifieldParser(["title", "content"], ix.schema, group=OrGroup)
-        query_string = " OR ".join([f'"{keyword}"' for keyword in keywords])
-        logger.info(f"构建的查询字符串: {query_string}")
+        query_parser = QueryParser("content", ix.schema, group=OrGroup.factory(0.9))
+        query_terms = []
+        for keyword in keywords:
+            query_terms.append(Term("content", keyword))
+        
+        # 使用 Or 查询组合所有关键词
+        final_query = query_parser.parse(" OR ".join(keywords))
+        logger.info(f"构建的查询: {final_query}")
 
-        q = query_parser.parse(query_string)
-        results = searcher.search(q, limit=None)
+        results = searcher.search(final_query, limit=None)
         logger.info(f"搜索结果数量: {len(results)}")
+        
+        # 添加更详细的日志
+        for hit in results:
+            logger.info(f"匹配文档: {hit['title']}, 得分: {hit.score}")
+            try:
+                matched_terms = hit.matched_terms()
+                logger.info(f"匹配字段: {matched_terms}")
+            except NoTermsException:
+                logger.warning(f"文档 {hit['title']} 没有匹配的词条")
         
         return [{"title": r["title"], "score": r.score, "highlights": r.highlights("content", top=3), "content": r.get("content", "")[:200]} for r in results]
 
@@ -760,8 +779,20 @@ def extract_core_keywords(query):
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "你是一个专门用于提取核心关键词的AI助手。请提取最重要的医学术语和症状。"},
-            {"role": "user", "content": f"从以下问题中提取3-5个最重要的核心关键词，这些关键词应该是搜索医疗文档时最有可能找到相关信息的词。问题：{query}"}
+            {"role": "system", "content": "你是一个专门用于提取医疗领域核心关键词的AI助手。请从给定的问题中提取最重要的医学术语或症状描述。"},
+            {"role": "user", "content": f"""
+            从以下问题中提取2-3个最重要的核心关键词。这些关键词应该是搜索医疗文档时最有可能找到相关信息的词。
+            
+            注意：
+            1. 常见词如"患者"、"病人"、"医生"、"医院"等不应被视为核心关键词，除非它们是问题的主要焦点。
+            2. 优先选择专业医学术语、症状描述或特定的疾病名称。
+            3. 关键词可以是问题中明确出现的词，也可以是根据问题内容推断出的相关医学术语。
+            4. 如果问题中没有明确的医学术语，可以选择问题中最具体、最相关的词语。
+
+            问题：{query}
+
+            核心关键词：
+            """}
         ],
         max_tokens=50
     )
@@ -785,7 +816,7 @@ def check_index_content(term):
     ix = open_dir("fulltext_index")
     with ix.searcher() as searcher:
         results = searcher.search(Term("content", term))
-        print(f"搜索 '{term}' 的结果数量: {len(results)}")
+        logger.info(f"搜索 '{term}' 的结果数量: {len(results)}")
         for hit in results:
-            print(f"文档: {hit['title']}")
-            print(f"内容片段: {hit.highlights('content')}")
+            logger.info(f"文档: {hit['title']}")
+            logger.info(f"内容片段: {hit.highlights('content')}")

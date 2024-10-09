@@ -119,7 +119,7 @@ def main():
 
     if neo4j_option == "Neo4j Aura":
         CURRENT_NEO4J_CONFIG = set_neo4j_config("AURA")
-        st.success("已选择连接到 Neo4j Aura")
+        st.success("选择连接到 Neo4j Aura")
     else:
         CURRENT_NEO4J_CONFIG = set_neo4j_config("LOCAL")
         st.success("已选择并连本地 Neo4j")
@@ -267,7 +267,7 @@ def main():
                 ix = open_dir("fulltext_index")
                 with ix.searcher() as searcher:
                     all_docs = list(searcher.all_stored_fields())
-                    st.write(f"索引中共有 {len(all_docs)} 个文档:")
+                    st.write(f"索引中共 {len(all_docs)} 个文档:")
                     for doc in all_docs:
                         st.write(f"- {doc['title']}")
             except Exception as e:
@@ -331,8 +331,12 @@ def main():
             if submit_button and hybrid_query:
                 with st.spinner("正在查询..."):
                     # 全文检索
-                    fulltext_results = search_fulltext_index(hybrid_query)
-                    st.write(f"全文索引中共有 {len(fulltext_results)} 个相关文档被搜索")
+                    try:
+                        fulltext_results = search_fulltext_index(hybrid_query)
+                        st.write(f"全文索引中共有 {len(fulltext_results)} 个相关文档被搜索")
+                    except Exception as e:
+                        st.error(f"全文检索出错: {str(e)}")
+                        fulltext_results = []
 
                     # 图数据库查询
                     graph_answer, graph_entities, graph_relations = hybrid_search(hybrid_query)
@@ -340,26 +344,39 @@ def main():
                     # 向量数据库查询
                     vector_answer, sources, excerpt = rag_qa(hybrid_query, st.session_state.file_indices)
                     
-                    # 使用图数据库结果作为主要答案，向量数据库结果作为补充
-                    final_answer = generate_final_answer(hybrid_query, graph_answer, vector_answer, excerpt, graph_entities, graph_relations)
+                    # 使用所有结果生成最终答案
+                    final_answer = generate_final_answer(
+                        hybrid_query, 
+                        graph_answer, 
+                        vector_answer, 
+                        fulltext_results,  # 确保这里传递了 fulltext_results
+                        excerpt, 
+                        graph_entities, 
+                        graph_relations
+                    )
                     
                     st.write("最终回答：", final_answer)
                     st.write("图数据库回答：", graph_answer)
                     st.write("向量数据库回答：", vector_answer)
-                    
+                    st.write(f"全文检索结果数量：{len(fulltext_results)}")
+
                     # 显示全文检索结果
                     if fulltext_results:
-                        st.write("全文检索验证结果：")
-                        for result in fulltext_results:
+                        st.write("全文检索结果（前3个）：")
+                        for result in fulltext_results[:3]:
                             st.write(f"- 文档: {result['title']}, 相关度: {result['score']:.2f}")
                             highlights = result['highlights']
                             # 处理高亮文本
                             highlights = re.sub(r'<b class="match term\d+">', '**', highlights)
                             highlights = highlights.replace('</b>', '**')
-                            st.write(f"  匹配内容: {highlights}")
+                            # 将连续的星号合并
+                            highlights = re.sub(r'\*{2,}', '**', highlights)
+                            # 移除可能残留的HTML标签
+                            highlights = re.sub(r'<[^>]+>', '', highlights)
+                            st.markdown(f"  匹配内容: {highlights}")
                             st.write(f"  文档内容片段: {result['content']}")
                     else:
-                        st.write("全文检索未找到相关结果，请谨慎看待答案。")
+                        st.write("全文检索未找到相关结果。")
 
         # 添加关键词搜索功能
         st.subheader("关键词搜索")
@@ -452,13 +469,17 @@ def main():
                                 # 处理高亮文本
                                 highlights = re.sub(r'<b class="match term\d+">', '**', highlights)
                                 highlights = highlights.replace('</b>', '**')
-                                st.write(f"匹配内容: {highlights}")
+                                # 将连续的星号合并
+                                highlights = re.sub(r'\*{2,}', '**', highlights)
+                                # 移除可能残留的HTML标签
+                                highlights = re.sub(r'<[^>]+>', '', highlights)
+                                st.markdown(f"匹配内容: {highlights}")
                                 st.write(f"文档内容片段: {result['content']}")
                                 st.write("---")
                         else:
                             st.warning("没有找到相关文档")
                     except Exception as e:
-                        st.error(f"搜索全文索引时错: {str(e)}")
+                        st.error(f"搜索全文索引时出错: {str(e)}")
 
         else:  # Neo4j 命令执行
             st.subheader("Neo4j 命令执行")
