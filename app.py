@@ -30,7 +30,6 @@ from data_processor import (
     initialize_faiss, create_fulltext_index, search_fulltext_index,
     open_dir, delete_graph_data, delete_vector_data, delete_fulltext_index
 )
-from whoosh.qparser import QueryParser
 
 # 在文件顶部的导入语句之后添加
 from data_processor import faiss_id_to_text, faiss_id_counter, faiss_index
@@ -78,14 +77,17 @@ def decompose_query(query):
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "你是一专门用于分解复杂查询的AI助手。"},
+            {"role": "system", "content": "你是一专门于分解复杂查询的AI助手。"},
             {"role": "user", "content": prompt}
         ]
     )
     return response.choices[0].message.content.strip().split("\n")
 
 def main():
-    global faiss_id_to_text, faiss_id_counter, faiss_index
+    if 'faiss_id_to_text' not in st.session_state:
+        st.session_state.faiss_id_to_text = {}
+    if 'faiss_id_counter' not in st.session_state:
+        st.session_state.faiss_id_counter = 0
     
     st.title("AI知识问答系统")
 
@@ -106,46 +108,52 @@ def main():
     if st.session_state.file_indices:
         for file_name, (chunks, index) in st.session_state.file_indices.items():
             for i, chunk in enumerate(chunks):
-                faiss_id_to_text[faiss_id_counter + i] = chunk
+                st.session_state.faiss_id_to_text[st.session_state.faiss_id_counter + i] = chunk
             vectors = index.reconstruct_n(0, index.ntotal)
             faiss_index.add(vectors)
-        faiss_id_counter += sum(len(chunks) for chunks, _ in st.session_state.file_indices.values())
+        st.session_state.faiss_id_counter += sum(len(chunks) for chunks, _ in st.session_state.file_indices.values())
 
     # Neo4j 配置选择
-    neo4j_option = st.radio(
-        "选择 Neo4j 连接方式",
-        ("Neo4j Aura", "本 Neo4j")
-    )
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        neo4j_option = st.radio(
+            "选择 Neo4j 连接方式",
+            ("Neo4j Aura", "本地 Neo4j")
+        )
 
-    if neo4j_option == "Neo4j Aura":
-        CURRENT_NEO4J_CONFIG = set_neo4j_config("AURA")
-        st.success("选择连接到 Neo4j Aura")
-    else:
-        CURRENT_NEO4J_CONFIG = set_neo4j_config("LOCAL")
-        st.success("已选择并连本地 Neo4j")
+    with col2:
+        if neo4j_option == "Neo4j Aura":
+            CURRENT_NEO4J_CONFIG = set_neo4j_config("AURA")
+            connection_status = "已选择连接到 Neo4j Aura"
+        else:
+            CURRENT_NEO4J_CONFIG = set_neo4j_config("LOCAL")
+            connection_status = "已选择连接到本地 Neo4j"
 
-    # 测试数据库连接
-    if CURRENT_NEO4J_CONFIG:
-        try:
-            driver = get_neo4j_driver()
-            with driver.session() as session:
-                result = session.run("RETURN 1 AS test")
-                test_value = result.single()["test"]
-                if test_value == 1:
-                    st.success("Neo4j 数据库连接成功")
-                else:
-                    st.error("Neo4j 数据库连接测试失败")
-            driver.close()
-        except Exception as e:
-            st.error(f"连接到 Neo4j 数据库时出错: {str(e)}")
-    else:
-        st.error("Neo4j 配置无效或未设置")
+    with col3:
+        # 测试数据库连接
+        if CURRENT_NEO4J_CONFIG:
+            try:
+                driver = get_neo4j_driver()
+                with driver.session() as session:
+                    result = session.run("RETURN 1 AS test")
+                    test_value = result.single()["test"]
+                    if test_value == 1:
+                        connection_status += " - 连接成功"
+                    else:
+                        connection_status += " - 连接测试失败"
+                driver.close()
+            except Exception as e:
+                connection_status += f" - 连接错误: {str(e)}"
+        else:
+            connection_status += " - 配置无效或未设置"
+
+    st.write(connection_status)
 
     # 添加一个分隔线
     st.markdown("---")
 
-    # 创建三个标签页
-    tab1, tab2, tab3 = st.tabs(["文档上传", "知识库问答", "数据库检索"])
+    # 创建四个标签页
+    tab1, tab2, tab3, tab4 = st.tabs(["文档上传", "知识库问答", "数据库检索", "数据管理"])
 
     with tab1:
         st.header("文档上传")
@@ -154,7 +162,7 @@ def main():
         max_tokens = 4096
 
         # 多文件上传
-        uploaded_files = st.file_uploader("传文档", type=["pdf", "docx", "txt"], accept_multiple_files=True)
+        uploaded_files = st.file_uploader("上传文档", type=["pdf", "docx", "txt"], accept_multiple_files=True)
 
         if uploaded_files:
             for uploaded_file in uploaded_files:
@@ -178,11 +186,11 @@ def main():
                     if st.button("加载到图数据库", key=f"graph_{uploaded_file.name}"):
                         with st.spinner(f"正在处理文档并加载到图数据库: {uploaded_file.name}..."):
                             result = process_data(content)
-                        st.success(f"文档 {uploaded_file.name} 成功加载到图数据库！")
+                        st.success(f"文档 {uploaded_file.name} 已成功加载到图数据库！")
                         st.write(f"处理了 {len(result['entities'])} 个实体和 {len(result['relations'])} 个关系")
                         
                         # 显示处理结果的详细信息
-                        with st.expander("看详细处理结果"):
+                        with st.expander("查看详细处理结果"):
                             st.subheader("实体:")
                             for entity in result['entities']:
                                 st.write(f"- {entity}")
@@ -192,7 +200,7 @@ def main():
                 
                 with col2:
                     if st.button("加载到向量数据库", key=f"vector_{uploaded_file.name}"):
-                        with st.spinner(f"正在处理档并加载到向量数据库: {uploaded_file.name}..."):
+                        with st.spinner(f"正在处理文档并加载到向量数据库: {uploaded_file.name}..."):
                             chunks, index = vectorize_document(content, max_tokens)
                             st.session_state.file_indices[uploaded_file.name] = (chunks, index)
                             save_index(uploaded_file.name, chunks, index)
@@ -229,79 +237,34 @@ def main():
             with col2:
                 if st.button("删除", key=f"delete_{file_name}"):
                     with st.spinner(f"正在删除文档 {file_name} 的所有相关数据..."):
-                        # 删除向量数据库中的数据
-                        delete_vector_data(file_name)
-                        del st.session_state.file_indices[file_name]
-                        
-                        # 删除图数据库中的数据
-                        delete_graph_data(file_name)
-                        
-                        # 删除全文索引中的数据
-                        delete_fulltext_index(file_name)
-                        
-                        # 删除本地索引文件
-                        delete_index(file_name)
-                    
-                    st.success(f"文档 {file_name} 及其所有相关数据已成功删除！")
+                        try:
+                            # 删除向量数据库中的数据
+                            delete_vector_data(file_name)
+                            
+                            # 删除图数据库中的数据
+                            delete_graph_data(file_name)
+                            
+                            # 删除全文索引中的数据
+                            delete_fulltext_index(file_name)
+                            
+                            # 删除本地索引文件
+                            delete_index(file_name)
+                            
+                            # 验证删除操作
+                            ix = open_dir("fulltext_index")
+                            with ix.searcher() as searcher:
+                                remaining_docs = [doc for doc in searcher.all_stored_fields() if doc['title'].startswith(file_name)]
+                                if not remaining_docs:
+                                    st.success(f"文档 {file_name} 及其所有相关数据已成功删除！")
+                                else:
+                                    st.warning(f"文档 {file_name} 的一些相关数据可能没有完全删除。正在尝试清理...")
+                                    for doc in remaining_docs:
+                                        delete_fulltext_index(doc['title'])
+                                    st.success(f"清理完成。请检查索引以确保所有相关数据已被删除。")
+                        except Exception as e:
+                            st.error(f"删除文档 {file_name} 时出错: {str(e)}")
+                            logger.error(f"删除文档 {file_name} 时出错", exc_info=True)
                     st.rerun()
-
-        # 在适当的位置添加（例如在 tab1 中文件上传后）
-        if st.button("测试全文索引"):
-            test_query = "患者"
-            test_results = search_fulltext_index(test_query)
-            st.write(f"测试查询 '{test_query}' 的结果:")
-            if test_results:
-                for result in test_results:
-                    st.write(f"- 文: {result['title']}, 相关度: {result['score']:.2f}")
-                    st.write(f"  匹配内容: {result['highlights']}")
-            else:
-                st.write("没有找到匹配的文档。")
-
-        if st.button("检查全文索引状态"):
-            try:
-                if not os.path.exists("fulltext_index"):
-                    st.warning("全文索引目录不存在。请先创建索")
-                else:
-                    ix = open_dir("fulltext_index")
-                    with ix.searcher() as searcher:
-                        doc_count = len(list(searcher.all_stored_fields()))
-                        st.write(f"全文索引中的文档数量: {doc_count}")
-                        for doc in searcher.all_stored_fields():
-                            st.write(f"文档标题: {doc['title']}")
-                            st.write(f"文档内容前100字符: {doc.get('content', '')[:100]}")
-            except Exception as e:
-                st.error(f"检查全文索引时出错: {str(e)}")
-                st.error(f"错误类型: {type(e).__name__}")
-                st.error(f"错误详情: {e.args}")
-
-        if st.button("列出所有索引文档"):
-            try:
-                ix = open_dir("fulltext_index")
-                with ix.searcher() as searcher:
-                    all_docs = list(searcher.all_stored_fields())
-                    st.write(f"索引中共 {len(all_docs)} 个文档:")
-                    for doc in all_docs:
-                        st.write(f"- {doc['title']}")
-            except Exception as e:
-                st.error(f"列出索引文档时出错: {str(e)}")
-
-        if st.button("显示索引详细信息"):
-            try:
-                ix = open_dir("fulltext_index")
-                with ix.searcher() as searcher:
-                    all_docs = list(searcher.all_stored_fields())
-                    st.write(f"索引中共有 {len(all_docs)} 个文档:")
-                    for doc in all_docs:
-                        st.write(f"文档标题: {doc['title']}")
-                        st.write(f"文档内容前200字符: {doc.get('content', '')[:200]}")
-                        st.write("---")
-            except Exception as e:
-                st.error(f"获取索引信息时出错: {str(e)}")
-
-        if st.button("检查索引内容"):
-            term = st.text_input("输入要检查的词")
-            if term:
-                check_index_content(term)
 
     with tab2:
         st.header("知识库问答")
@@ -353,10 +316,10 @@ def main():
                     # 图数据库查询
                     graph_answer, graph_entities, graph_relations = hybrid_search(hybrid_query)
                     
-                    # 向量数据库查询
+                    # 向量数据库查
                     vector_answer, sources, excerpt = rag_qa(hybrid_query, st.session_state.file_indices)
                     
-                    # 使用所有结果生成最终答案
+                    # 使用所有结果成最终答案
                     final_answer = generate_final_answer(
                         hybrid_query, 
                         graph_answer, 
@@ -372,7 +335,7 @@ def main():
                     st.write("向量数据库回答：", vector_answer)
                     st.write(f"全文检索结果数量：{len(fulltext_results)}")
 
-                    # 显示全文检索结果
+                    # 显示全文检结果
                     if fulltext_results:
                         st.write("全文检索结果（前3个）：")
                         for result in fulltext_results[:3]:
@@ -422,7 +385,7 @@ def main():
                 with st.spinner("正在搜索图数据库..."):
                     entities, relations, contents = query_graph(graph_query)
                 if entities or relations:
-                    st.success("搜索完成！")
+                    st.success("搜索完成")
                     st.write("找到的实体:")
                     st.write(", ".join(entities))
                     st.write("相关关系:")
@@ -467,7 +430,7 @@ def main():
         elif search_type == "全文索引搜索":
             st.subheader("全文索引搜索")
             with st.form(key='fulltext_search_form'):
-                fulltext_query = st.text_input("输入搜索关键词")
+                fulltext_query = st.text_input("输搜索关键词")
                 submit_button = st.form_submit_button(label='执行全文索引搜索')
             if submit_button and fulltext_query:
                 with st.spinner("正在搜索全文索引..."):
@@ -510,6 +473,128 @@ def main():
                             st.info("查询执行成功，但没有返回结果。")
                     except Exception as e:
                         st.error(f"执行查询时发生错误: {str(e)}")
+
+    with tab4:
+        st.header("数据管理")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            # 全文索引信息
+            if st.button("全文索引信息"):
+                with st.spinner("正在获取全文索引信息..."):
+                    try:
+                        ix = open_dir("fulltext_index")
+                        with ix.searcher() as searcher:
+                            all_docs = list(searcher.all_stored_fields())
+                            st.write(f"全文索引中共有 {len(all_docs)} 个文档")
+                            for doc in all_docs:
+                                st.write(f"- 文档: {doc['title']}")
+                    except Exception as e:
+                        st.error(f"获取全文索引信息时出错: {str(e)}")
+
+            # 图数据库信息
+            if st.button("图数据库信息"):
+                with st.spinner("正在获取图数据库信息..."):
+                    try:
+                        driver = get_neo4j_driver()
+                        with driver.session() as session:
+                            # 获取与上传文档相关的节点数量
+                            result = session.run("""
+                            MATCH (n:Entity)
+                            WHERE n.source IS NOT NULL
+                            RETURN count(n) as node_count
+                            """)
+                            node_count = result.single()["node_count"]
+
+                            # 获取与上传文档相关的关系数量
+                            result = session.run("""
+                            MATCH (n:Entity)-[r]->(m:Entity)
+                            WHERE n.source IS NOT NULL AND m.source IS NOT NULL
+                            RETURN count(r) as relation_count
+                            """)
+                            relation_count = result.single()["relation_count"]
+
+                            st.write(f"图数据库中与上传文档相关的数据:")
+                            st.write(f"- 节点数量: {node_count}")
+                            st.write(f"- 关系数量: {relation_count}")
+
+                            # 获取一些示例节点和关系
+                            result = session.run("""
+                            MATCH (n:Entity)
+                            WHERE n.source IS NOT NULL
+                            RETURN n.name AS name, n.source AS source
+                            LIMIT 5
+                            """)
+                            st.write("示例节点:")
+                            for record in result:
+                                st.write(f"  - {record['name']} (来源: {record['source']})")
+
+                            result = session.run("""
+                            MATCH (n:Entity)-[r]->(m:Entity)
+                            WHERE n.source IS NOT NULL AND m.source IS NOT NULL
+                            RETURN n.name AS source, type(r) AS relation, m.name AS target
+                            LIMIT 5
+                            """)
+                            st.write("示例关系:")
+                            for record in result:
+                                st.write(f"  - {record['source']} --[{record['relation']}]--> {record['target']}")
+
+                    except Exception as e:
+                        st.error(f"获取图数据库信息时出错: {str(e)}")
+
+            # 向量数据信息
+            if st.button("向量数据信息"):
+                with st.spinner("正在获取向量数据信息..."):
+                    try:
+                        st.write(f"向量数据库中共有 {faiss_index.ntotal} 个向量")
+                        st.write(f"向量维度: {faiss_index.d}")
+                        st.write(f"已索引的文档数量: {len(st.session_state.file_indices)}")
+                    except Exception as e:
+                        st.error(f"获取向量数据信息时出错: {str(e)}")
+
+        with col2:
+            # 全文索引删除
+            if st.button("全文索引删除"):
+                with st.spinner("正在删除全文索引..."):
+                    try:
+                        ix = open_dir("fulltext_index")
+                        with ix.searcher() as searcher:
+                            all_docs = list(searcher.all_stored_fields())
+                            for doc in all_docs:
+                                delete_fulltext_index(doc['title'])
+                        st.success("全文索引已成功删除")
+                    except Exception as e:
+                        st.error(f"删除全文索引时出错: {str(e)}")
+
+            # 图数据删除
+            if st.button("数据删除"):
+                with st.spinner("正在删除图数据..."):
+                    try:
+                        driver = get_neo4j_driver()
+                        with driver.session() as session:
+                            # 只删除与上传文档相关的节点和关系
+                            session.run("""
+                            MATCH (n:Entity)
+                            WHERE n.source IS NOT NULL
+                            DETACH DELETE n
+                            """)
+                        st.success("与上传文档相关的图数据已成功删除")
+                    except Exception as e:
+                        st.error(f"删除图数据时出错: {str(e)}")
+
+            # 向量数据删除
+            if st.button("向量数据删除"):
+                with st.spinner("正在删除向量数据..."):
+                    try:
+                        # 重新初始化 FAISS 索引
+                        initialize_faiss()
+                        st.session_state.faiss_id_to_text = {}
+                        st.session_state.faiss_id_counter = 0
+                        st.session_state.file_indices = {}  # 清空文件索引
+                        st.success("向量数据已成功删除")
+                    except Exception as e:
+                        st.error(f"删除向量数据时出错: {str(e)}")
 
 if __name__ == "__main__":
     main()
