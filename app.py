@@ -86,6 +86,33 @@ def decompose_query(query):
     return response.choices[0].message.content.strip().split("\n")
 
 def main():
+    # 添加标题和开发者信息
+    st.markdown(
+        """
+        <style>
+        .title-container {
+            display: flex;
+            align-items: baseline;
+        }
+        .main-title {
+            font-size: 2em;
+            font-weight: bold;
+        }
+        .developer-info {
+            font-size: 1em;
+            color: #888;
+            font-weight: bold;
+            margin-left: 100px;
+        }
+        </style>
+        <div class="title-container">
+            <span class="main-title">AI知识库问答系统</span>
+            <span class="developer-info">Developed by Huaiyuan Tan</span>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
     if 'faiss_index' not in st.session_state:
         st.session_state.faiss_index = initialize_faiss()
     
@@ -94,8 +121,6 @@ def main():
     if 'faiss_id_counter' not in st.session_state:
         st.session_state.faiss_id_counter = 0
     
-    st.title("AI知识问答系统")
-
     # 初始化 FAISS
     try:
         faiss_index = initialize_faiss()
@@ -239,12 +264,12 @@ def main():
                                     else:
                                         st.warning(f"无法在索引中找到文档 {uploaded_file.name}")
                             except Exception as e:
-                                st.error(f"创建或验证索引时出错: {str(e)}")
+                                st.error(f"创建或验证索时出错: {str(e)}")
                                 st.error(f"错误类型: {type(e).__name__}")
                                 st.error(f"错误详情: {e.args}")
 
         # 显示已处理的文档并添加删除按钮
-        st.subheader("已处理文档:")
+        st.subheader("已处理文件:")
         for file_name in list(st.session_state.file_indices.keys()):
             col1, col2 = st.columns([3, 1])
             with col1:
@@ -289,7 +314,7 @@ def main():
         if qa_type == "向量数据库问答":
             st.subheader("向量数据库问答")
             with st.form(key='vector_qa_form'):
-                vector_query = st.text_input("请输入您的问题（向量数据库）")
+                vector_query = st.text_input("请输您的问题（向量数据库）")
                 submit_button = st.form_submit_button(label='提交问题')
             if submit_button and vector_query:
                 with st.spinner("正在查询..."):
@@ -389,9 +414,9 @@ def main():
     with tab3:
         st.header("数据库检索")
         
-        search_type = st.radio("选择搜索类型", ["图数据库搜索", "向量数据库搜索", "全文索引搜索", "Neo4j 命令执行"])
+        search_type = st.radio("选择搜索类", ["图数据库索", "向量数据库搜索", "全文索引搜索", "Neo4j 命令执行"])
         
-        if search_type == "图数据库搜索":
+        if search_type == "图数据库索":
             st.subheader("图数库搜索")
             with st.form(key='graph_search_form'):
                 graph_query = st.text_input("输入搜索关键词")
