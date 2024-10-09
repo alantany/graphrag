@@ -19,7 +19,7 @@ import torch
 from whoosh.index import create_in, open_dir
 from whoosh.fields import *
 from whoosh.qparser import QueryParser, OrGroup, AndGroup, MultifieldParser
-from whoosh.query import And, Or, Term, FuzzyTerm
+from whoosh.query import And, Or, Term
 from whoosh.analysis import Analyzer, Token
 from gensim.models import KeyedVectors
 from whoosh.analysis import Analyzer, Token
@@ -95,19 +95,14 @@ def initialize_openai(api_key, base_url):
     logger.info("OpenAI 初始化完成")
 
 def initialize_faiss():
-    global faiss_index
-    if faiss_index is None:
-        try:
-            faiss_index = faiss.IndexFlatL2(384)  # 384是向量维度,根据实际模型调整
-            logger.info("FAISS 索引成功初始化")
-        except Exception as e:
-            logger.error(f"FAISS 索引初始化失败: {str(e)}")
-            raise
-    else:
-        logger.info("FAISS 索引已经存在，跳过初始化")
+    global faiss_index, faiss_id_to_text, faiss_id_counter
+    faiss_index = faiss.IndexFlatL2(384)  # 384是向量维度,根据实际模型调整
+    faiss_id_to_text = {}
+    faiss_id_counter = 0
+    logger.info("FAISS 索引已重新初始化")
     return faiss_index
 
-# 计算token数量
+# 计token数量
 def num_tokens_from_string(string: str) -> int:
     encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
     return len(encoding.encode(string))
@@ -129,6 +124,13 @@ def vectorize_document(content, max_tokens):
     vectors = model.encode(chunks)
     index = faiss.IndexFlatL2(384)  # 384是向量维度,根据实际模型调整
     index.add(vectors)
+    
+    # 同步到全局 faiss_index
+    global faiss_index
+    if faiss_index is None:
+        faiss_index = faiss.IndexFlatL2(384)
+    faiss_index.add(vectors)
+    
     return chunks, index
 
 # 提取关键词
@@ -220,7 +222,7 @@ def rag_qa(query, file_indices, relevant_docs=None):
     )
     answer = response.choices[0].message.content
     
-    # 更���式
+    # 更式
     if "相关原文" in answer:
         answer_parts = answer.split("相关原文：", 1)
         main_answer = answer_parts[0].strip()
@@ -290,7 +292,7 @@ def delete_index(file_name):
             with open(file_list_path, 'w') as f:
                 f.write('\n'.join(file_list))
 
-def process_data(content):
+def process_data(content, file_name):
     logger.info("开始处理数据")
     logger.info(f"接收到的内容: {content[:200]}...")  # 打印前200个字符
 
@@ -299,7 +301,7 @@ def process_data(content):
     请从以下医疗记录中提取所有要的实体和关系。
     实体应包括但不限于：患者姓名、年龄、性别、诊断、症状、检查、治疗、药物、生理指标等。
     关系应描述实体之间的所有可能联系，如"患有""接受检查"、"使用药物"、"属性"等。
-    请确保每个实体都至少有一个关系。对于没有明确关系的性（如性别、年龄等），请使用"属性"作为关系类型。
+    请确保每个实体都至少有一个关系。对于没有明关系的性（如性别、年龄等），请使用"属性"作为关系类型。
     请尽可能详细地取关系，不要遗任何可能的连接。
     请以JSON格式输出，格式如下：
     {{
@@ -326,7 +328,7 @@ def process_data(content):
     logger.info(f"OpenAI API 返回的原始内容: {result}")
 
     try:
-        # 尝试清理和解JSON
+        # 尝清理和解JSON
         cleaned_result = re.search(r'\{.*\}', result, re.DOTALL)
         if cleaned_result:
             extracted_data = json.loads(cleaned_result.group())
@@ -390,33 +392,45 @@ def process_data(content):
     driver = get_neo4j_driver()
     
     with driver.session() as session:
+        # 删除旧数据
+        session.run("""
+        MATCH (n:Entity)
+        WHERE n.source = $file_name
+        DETACH DELETE n
+        """, file_name=file_name)
+
         # 创建实体
+        created_entities = 0
         for entity in entities:
             result = session.run("""
-            MERGE (n:Entity {name: $name}) 
+            MERGE (n:Entity {name: $name, source: $file_name}) 
             SET n.content = $content
             RETURN count(*)
-            """, name=str(entity).strip(), content=content)
+            """, name=str(entity).strip(), content=content, file_name=file_name)
             count = result.single()[0]
-            logger.info(f"创建或更新实: {entity}, : {count}")
+            created_entities += count
+            logger.info(f"创建或更新实体: {entity}, 影响的节点数: {count}")
         
-        # 创建
+        # 创建关系
+        created_relations = 0
         for relation in relations:
             if isinstance(relation, dict):
                 source, rel_type, target = relation['source'], relation['relation'], relation['target']
             else:
                 source, rel_type, target = relation
             result = session.run("""
-            MATCH (a:Entity {name: $source})
-            MERGE (b:Entity {name: $target})
+            MATCH (a:Entity {name: $source, source: $file_name})
+            MATCH (b:Entity {name: $target, source: $file_name})
             MERGE (a)-[r:RELATED_TO {type: $rel_type}]->(b)
             SET r.content = $content
             RETURN count(*)
-            """, source=str(source).strip(), target=str(target).strip(), rel_type=str(rel_type).strip(), content=content)
+            """, source=str(source).strip(), target=str(target).strip(), rel_type=str(rel_type).strip(), content=content, file_name=file_name)
             count = result.single()[0]
-            logger.info(f"创建或更新关系: {source} -{rel_type}-> {target}, 影的关系数: {count}")
+            created_relations += count
+            logger.info(f"创建或更新关系: {source} -{rel_type}-> {target}, 影响的关系数: {count}")
     
     logger.info(f"处理了 {len(entities)} 个实体和 {len(relations)} 个关系")
+    logger.info(f"实际创建或更新了 {created_entities} 个实体和 {created_relations} 个关系")
     driver.close()
     return {"entities": entities, "relations": relations}
 
@@ -486,7 +500,7 @@ def hybrid_search(query):
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "你是一个医疗助手根据给定的实体信息和关系准确回答问题。如果信息不足，请如实说明。"},
+                {"role": "system", "content": "你是一个医疗助手根据给定的实体信息和关系准确回答问题。如果信息不足请如实说明。"},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=150
@@ -605,7 +619,7 @@ def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, 
             {"role": "system", "content": "你是一个智能助手，能够综合分析来自不同数据源的信息，并提供准确、全面的回答。你需要仔细考虑所有提供的信息，特别是要注意全文检索的结果数量和内容。"},
             {"role": "user", "content": prompt}
         ],
-        max_tokens=800  # 增加 token 限以允许更详细的回答
+        max_tokens=800  # 增加 token 限允许更详细的回答
     )
     
     return response.choices[0].message.content.strip()
@@ -784,7 +798,7 @@ def extract_core_keywords(query):
         messages=[
             {"role": "system", "content": "你是一个专门用于提取医疗领域核心关键词的AI助手。请从给定的问题中提取最重要的医学术语或症状描述。"},
             {"role": "user", "content": f"""
-            从以下问题中提取2-3个最重要的心关键词。这些关键词应该是搜索医疗文档时最有可能到相关信息词。
+            从以下问题中提取2-3个最重要的心关键词。这些关键词应该是搜索医疗文档时最有可能到相关信词。
             
             注意：
             1. 常见词"患者"、"病人"、"医生"、"医院"等不应被视为核心关键词，除非它们是问题的主要焦点。
@@ -892,7 +906,7 @@ def delete_fulltext_index(file_name):
         logger.info(f"已删除全文索引中与文件 {file_name} 相关的所有数据")
     else:
         logger.warning("全文索引目录不存在")
-
+    
     # 验证删除操作
     if os.path.exists("fulltext_index"):
         ix = open_dir("fulltext_index")
@@ -902,3 +916,16 @@ def delete_fulltext_index(file_name):
                 logger.warning(f"删除操作后仍有与 {file_name} 相关的文档: {[doc['title'] for doc in remaining_docs]}")
             else:
                 logger.info(f"成功删除所有与 {file_name} 相关的文档")
+
+def clear_vector_data():
+    global faiss_index, faiss_id_to_text, faiss_id_counter
+    faiss_index = initialize_faiss()
+    faiss_id_to_text = {}
+    faiss_id_counter = 0
+    
+    # 删除所有保存的索引文件
+    if os.path.exists('indices'):
+        for file in os.listdir('indices'):
+            os.remove(os.path.join('indices', file))
+    
+    logger.info("所有向量数据已被清除")
