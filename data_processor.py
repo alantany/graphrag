@@ -1,5 +1,3 @@
-import jieba
-import jieba.posseg as pseg
 import re
 from neo4j import GraphDatabase
 import logging
@@ -16,6 +14,18 @@ import pickle
 from PyPDF2 import PdfReader
 import docx
 import streamlit as st
+from transformers import AutoTokenizer, AutoModel
+import torch
+from whoosh.index import create_in, open_dir
+from whoosh.fields import *
+from whoosh.qparser import QueryParser, OrGroup, AndGroup, MultifieldParser
+from whoosh.query import And, Or, Term, FuzzyTerm
+from whoosh.analysis import Analyzer, Token
+from gensim.models import KeyedVectors
+from whoosh.analysis import Analyzer, Token
+from whoosh.fields import Schema, TEXT, ID
+from whoosh.index import create_in, open_dir
+from whoosh.qparser import QueryParser
 
 # Neo4j连接配置
 AURA_URI = "neo4j+s://b76a61f2.databases.neo4j.io:7687"
@@ -75,7 +85,7 @@ def set_neo4j_config(config_type):
         logger.error(f"Neo4j 配置不完整: {CURRENT_NEO4J_CONFIG}")
         return False
     
-    logger.info(f"Neo4j 配置已设置: URI={CURRENT_NEO4J_CONFIG['URI']}, USERNAME={CURRENT_NEO4J_CONFIG['USERNAME']}")
+    logger.info(f"Neo4j 配已设置: URI={CURRENT_NEO4J_CONFIG['URI']}, USERNAME={CURRENT_NEO4J_CONFIG['USERNAME']}")
     return CURRENT_NEO4J_CONFIG
 
 def initialize_openai(api_key, base_url):
@@ -122,11 +132,23 @@ def vectorize_document(content, max_tokens):
 
 # 提取关键词
 def extract_keywords(text, top_k=5):
-    words = jieba.cut(text)
-    word_count = Counter(words)
-    # 过滤掉停用词和单个字符
-    keywords = [word for word, count in word_count.most_common(top_k*2) if len(word) > 1]
-    return keywords[:top_k]
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-chinese")
+    model = AutoModel.from_pretrained("bert-base-chinese")
+    
+    inputs = tokenizer(text, return_tensors="pt", max_length=512, truncation=True)
+    outputs = model(**inputs)
+    
+    # 使用最后一层的隐藏状态
+    last_hidden_state = outputs.last_hidden_state[0]
+    
+    # 计算每个词的重要得分（这里使用简单的L2数）
+    word_importance = torch.norm(last_hidden_state, dim=1)
+    
+    # 获取top_k个重要的词
+    top_k_indices = torch.argsort(word_importance, descending=True)[:top_k]
+    top_k_tokens = tokenizer.convert_ids_to_tokens(inputs.input_ids[0][top_k_indices])
+    
+    return top_k_tokens
 
 # 基于关键词搜文
 def search_documents(keywords, file_indices):
@@ -148,7 +170,7 @@ def rag_qa(query, file_indices, relevant_docs=None):
         relevant_docs = search_documents(keywords, file_indices)
     
     if not relevant_docs:
-        return "没有找到相关文档。请尝试使用不同的关键。", [], ""
+        return "没有找到相关文档。请尝试使用不同的关键词。", [], ""
 
     all_chunks = []
     chunk_to_file = {}
@@ -183,7 +205,7 @@ def rag_qa(query, file_indices, relevant_docs=None):
     # 确保总token数不超过4096
     max_context_tokens = 3000  # 为系统消息、查询和其他内容预留更多空间
     while num_tokens_from_string(context_text) > max_context_tokens:
-        context_text = context_text[:int(len(context_text)*0.9)]  # 每减少10%的内容
+        context_text = context_text[:int(len(context_text)*0.9)]  # 每次减少10%的内容
     
     if not context_text:
         return "没有找到相关信息。", [], ""
@@ -192,12 +214,12 @@ def rag_qa(query, file_indices, relevant_docs=None):
         model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": "你是一位有帮助的助手。请根据给定的上下文回答问题。始终使用中文回答，无论问题是什么语言。在回答之后，请务必提供一段最相关的原文摘录，以'相关原文：'为前缀。"},
-            {"role": "user", "content": f"上下文: {context_text}\n\n问题: {query}\n\n请提供你的回答然后在回答后面附上相关的原文摘录，以'相关原文：'为前缀。"}
+            {"role": "user", "content": f"上下文: {context_text}\n\n问题: {query}\n\n请提供你的回答然后在回答后面附上相关的文摘录，以'相关原文：'为前缀。"}
         ]
     )
     answer = response.choices[0].message.content
     
-    # 更灵活地处理回答格式
+    # 更灵活地处理回格式
     if "相关原文：" in answer:
         answer_parts = answer.split("相关原文：", 1)
         main_answer = answer_parts[0].strip()
@@ -216,7 +238,7 @@ def rag_qa(query, file_indices, relevant_docs=None):
         for file_name, chunk in context_with_sources:
             if relevant_excerpt in chunk:
                 relevant_sources.append((file_name, chunk))
-                break  # 只添加第一个匹配的文件
+                break  # 只添一个匹配的文件
     if not relevant_sources and context_with_sources:  # 如果没有找到精确匹配，使用第一个上下文源
         relevant_sources.append(context_with_sources[0])
 
@@ -275,7 +297,7 @@ def process_data(content):
     prompt = f"""
     请从以下医疗记录中提取所有要的实体和关系。
     实体应包括但不限于：患者姓名、年龄、性别、诊断、症状、检查、治疗、药物、生理指标等。
-    关系应描述实体之间的所有可能联系，如"患有"、"接受检查"、"使用药物"、"属性"等。
+    关系应描述实体之间的所有可能联系，如"患有""接受检查"、"使用药物"、"属性"等。
     请确保每个实体都至少有一个关系。对于没有明确关系的性（如性别、年龄等），请使用"属性"作为关系类型。
     请尽可能详细地取关系，不要遗任何可能的连接。
     请以JSON格式输出，格式如下：
@@ -294,7 +316,7 @@ def process_data(content):
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "你是一个医疗信息提取助手，擅长医疗记录中提取体和关系。请尽可能详地提取所有相关信息。"},
+            {"role": "system", "content": "你是一个医疗信息提取助手，擅长医疗记录中提取体和关系请尽可能详地提取所有相关信息。"},
             {"role": "user", "content": prompt}
         ]
     )
@@ -303,12 +325,12 @@ def process_data(content):
     logger.info(f"OpenAI API 返回的原始内容: {result}")
 
     try:
-        # 尝试清理和解析JSON
+        # 尝试清理和解JSON
         cleaned_result = re.search(r'\{.*\}', result, re.DOTALL)
         if cleaned_result:
             extracted_data = json.loads(cleaned_result.group())
         else:
-            raise ValueError("无法在返回结果中找到有效的JSON")
+            raise ValueError("法在返回结果中找到有效的JSON")
 
         entities = extracted_data['entities']
         relations = extracted_data['relations']
@@ -325,7 +347,7 @@ def process_data(content):
 
     except json.JSONDecodeError as e:
         logger.error(f"无法解析OpenAI返回的JSON: {str(e)}")
-        # 使用则表达式提取实体���关系
+        # 使用则表达式提取实体关系
         entities = re.findall(r'"([^"]+)"', result)
         relations = [
             {'source': m[0], 'relation': m[1], 'target': m[2]}
@@ -349,7 +371,7 @@ def process_data(content):
                 elif entity.isdigit() or "岁" in entity:
                     relations.append({"source": patient_name, "relation": "年龄", "target": entity})
                 elif entity in ["血糖", "血压", "体重", "心率", "体"]:
-                    relations.append({"source": patient_name, "relation": "生理指���", "target": entity})
+                    relations.append({"source": patient_name, "relation": "生理指", "target": entity})
                 elif entity in ["口干", "多尿", "多食", "体重下降"]:
                     relations.append({"source": patient_name, "relation": "症状", "target": entity})
                 elif "检查" in entity or entity in ["心图", "胸片", "肌电图", "超声", "眼科检查", "GFR", "CGMS"]:
@@ -375,9 +397,9 @@ def process_data(content):
             RETURN count(*)
             """, name=str(entity).strip(), content=content)
             count = result.single()[0]
-            logger.info(f"创建或更新实体: {entity}, : {count}")
+            logger.info(f"创建或更新实��: {entity}, : {count}")
         
-        # 创建关系
+        # 创建
         for relation in relations:
             if isinstance(relation, dict):
                 source, rel_type, target = relation['source'], relation['relation'], relation['target']
@@ -391,7 +413,7 @@ def process_data(content):
             RETURN count(*)
             """, source=str(source).strip(), target=str(target).strip(), rel_type=str(rel_type).strip(), content=content)
             count = result.single()[0]
-            logger.info(f"创建或更新关系: {source} -{rel_type}-> {target}, 影响的关系数: {count}")
+            logger.info(f"创建或更新关系: {source} -{rel_type}-> {target}, 影的关系数: {count}")
     
     logger.info(f"处理了 {len(entities)} 个实体和 {len(relations)} 个关系")
     driver.close()
@@ -440,7 +462,7 @@ def hybrid_search(query):
         entities, relations, contents = query_graph(query)
         
         if not entities and not relations:
-            return "抱歉，我没有找到与您的问题相关的信息。请尝试用不同的方式问，或者确认所查询的信息是否已经录入系统。"
+            return "抱歉，我没有找到与您的问题相关的信息。请尝试用不同的方式问，或者确认所查询的信息是否已经录入系统。", [], []
         
         # 限制上下文大小
         max_entities = 10
@@ -463,7 +485,7 @@ def hybrid_search(query):
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "你是一个医疗助手，根据给定的实体信息和关系准确回答问题。如果信息不足，请如实说明。"},
+                {"role": "system", "content": "你是一个医疗助手根据给定的实体信息和关系准确回答问题。如果信息不足，请如实说明。"},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=150
@@ -474,15 +496,15 @@ def hybrid_search(query):
         if response and response.choices and len(response.choices) > 0 and response.choices[0].message:
             answer = response.choices[0].message.content.strip()
             if not answer:
-                answer = "抱歉，我无法根提供的信息回答这个问题。请尝试提供更多细节或以不同的方式提问。"
+                answer = "抱歉，我无法根据提供的信息回答这个问题。请尝试提供更多细节或以不同的方式问。"
         else:
-            answer = "抱歉，处理您的问题时出现了意外况。请稍后再试。"
+            answer = "抱歉，处理您的问题时出现了意外情况。请稍后再试。"
         
         logger.info(f"搜索结果: {answer}")
-        return answer
+        return answer, entities, relations
     except Exception as e:
         logger.error(f"混合搜索过程中发生错误: {str(e)}", exc_info=True)
-        return f"抱歉，在处理您的问题时发生了错误: {str(e)}"
+        return f"抱歉，在处理您的问题时发生了错误: {str(e)}", [], []
 
 # 文件末尾添加以下函数
 
@@ -542,26 +564,37 @@ def get_neo4j_driver():
         auth=(CURRENT_NEO4J_CONFIG["USERNAME"], CURRENT_NEO4J_CONFIG["PASSWORD"])
     )
 
-def generate_final_answer(query, combined_context):
+def generate_final_answer(query, graph_answer, vector_answer, excerpt, graph_entities, graph_relations):
     prompt = f"""
-    基于以下来自图数据库和向量数据库的信息，请回答问题。如果两个数据库的信息有冲突，请综合分析并给出最合理的回答。
-    如果信息不足以回答问题，请如实说明。
+    基于以下信息，请回答问题并提供详细的推理过程和证据来源
 
     问题：{query}
 
-    信息：
-    {combined_context}
+    图数据库回答（先考虑）：{graph_answer}
+    图数据库实体：{', '.join(graph_entities)}
+    数据库关系：{', '.join([f"{r['source']} --[{r['relation']}]--> {r['target']}" for r in graph_relations])}
 
-    请提供一个综合的回答：
+    量数据库回答（用于补充）：{vector_answer}
+
+    相关原文：{excerpt}
+
+    请提供一个综合的回答，包括：
+    1. 直接答问题优先使用图数据库��精确信息
+    2. 如果图数据库信息不足，使用向量数据库信息进补充
+    3. 细的推理过程
+    4. 使用的证据及其来源
+    5. 如果存在不确定性或矛盾，请说明原因并给出议
+
+    注意：图数据库的信息应该被视为更可靠和确的来源。
     """
     
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "你是一个智能助手，能够综合分析来自不同数据源的信息，并提供准确、全面的回答。"},
+            {"role": "system", "content": "你是一个智能助手，能够综合分析来自不同数据源的信息，并提供准确、全面的回答。优先考虑图数据库的精确信息。"},
             {"role": "user", "content": prompt}
         ],
-        max_tokens=300
+        max_tokens=500
     )
     
     return response.choices[0].message.content.strip()
@@ -569,7 +602,7 @@ def generate_final_answer(query, combined_context):
 def vector_search(query, k=5):
     global faiss_index
     if faiss_index is None:
-        logger.error("FAISS 索引未初始化")
+        logger.error("FAISS 索引未初始")
         return []
     
     query_vector = model.encode([query])
@@ -612,5 +645,147 @@ __all__ = [
     'execute_neo4j_query',
     'faiss_index',
     'faiss_id_to_text',
-    'faiss_id_counter'
+    'faiss_id_counter',
+    'QueryParser'
 ]
+
+def fused_graph_vector_search(query, graph_db, vector_db):
+    # 1. 从查询中提取实体
+    entities = extract_entities(query)
+    
+    # 2. 使用实体在图数据库中进行子图匹配
+    subgraph = graph_db.match_subgraph(entities)
+    
+    # 3. 将子图信息换为文本
+    subgraph_text = convert_subgraph_to_text(subgraph)
+    
+    # 4. 在向量数据库中搜索相关文档
+    relevant_docs = vector_db.search(query + " " + subgraph_text)
+    
+    # 5. 结合子图和相关文档生成最终答案
+    final_answer = generate_answer(query, subgraph, relevant_docs)
+    
+    return final_answer
+
+class CustomChineseAnalyzer(Analyzer):
+    def __init__(self):
+        self.analyzer = JiebaAnalyzer()
+
+    def __call__(self, text, **kwargs):
+        tokens = self.analyzer(text)
+        for t in tokens:
+            yield Token(text=t.text, pos=t.pos, startchar=t.startchar, endchar=t.endchar)
+
+def openai_tokenize(text):
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "你是一个专门用于中文分词的AI助手。请对给定的文本进行分词，特别注意医学术语。"},
+            {"role": "user", "content": f"请对以下文本进行分词，返回一个JSON格式的词语列表。文本：{text[:1000]}"}  # 限制文本长度以避免超过token限制
+        ],
+        max_tokens=1000
+    )
+    tokens = json.loads(response.choices[0].message.content)
+    return tokens
+
+class OpenAIAnalyzer(Analyzer):
+    def __call__(self, text, **kwargs):
+        tokens = openai_tokenize(text)
+        for t in tokens:
+            yield Token(text=t, pos=len(t))
+
+def create_fulltext_index(content, file_name):
+    logger.info(f"开始为文件 {file_name} 创建或更新全文索引")
+    logger.info(f"文件内容长度: {len(content)}")
+    
+    if not os.path.exists("fulltext_index"):
+        os.mkdir("fulltext_index")
+        logger.info("创建了新的全文索引目录")
+    
+    schema = Schema(title=TEXT(stored=True), content=TEXT(stored=True, analyzer=OpenAIAnalyzer()))
+    
+    if not os.path.exists("fulltext_index/MAIN_WRITELOCK"):
+        ix = create_in("fulltext_index", schema)
+    else:
+        ix = open_dir("fulltext_index")
+    
+    writer = ix.writer()
+    
+    # 将内容分成较小的块进行处理
+    chunk_size = 1000  # 可以根据需要调整
+    for i in range(0, len(content), chunk_size):
+        chunk = content[i:i+chunk_size]
+        writer.add_document(title=f"{file_name}_chunk_{i//chunk_size}", content=chunk)
+    
+    writer.commit()
+    
+    logger.info(f"全文索引更新完成，文件名: {file_name}")
+    
+    # 验证索引内容
+    with ix.searcher() as searcher:
+        results = searcher.search(QueryParser("title", ix.schema).parse(file_name))
+        if results:
+            logger.info(f"成功检索到文档: {file_name}")
+            logger.info(f"索引中的文档内容长度: {sum(len(hit['content']) for hit in results)}")
+            logger.info(f"索引中的第一个文档块内容前200字符: {results[0]['content'][:200]}")
+        else:
+            logger.warning(f"无法检索到文档: {file_name}")
+    
+    return ix
+
+def search_fulltext_index(query):
+    logger.info(f"开始全文检索，查询: {query}")
+    if not os.path.exists("fulltext_index"):
+        logger.warning("全文索引目录不存在，无法执行搜索")
+        return []
+
+    ix = open_dir("fulltext_index")
+    with ix.searcher() as searcher:
+        # 使用 OpenAI API 提取关键词
+        keywords = extract_core_keywords(query)
+        logger.info(f"提取的核心关键词: {keywords}")
+
+        # 构建查询
+        query_parser = MultifieldParser(["title", "content"], ix.schema, group=OrGroup)
+        query_string = " OR ".join([f'"{keyword}"' for keyword in keywords])
+        logger.info(f"构建的查询字符串: {query_string}")
+
+        q = query_parser.parse(query_string)
+        results = searcher.search(q, limit=None)
+        logger.info(f"搜索结果数量: {len(results)}")
+        
+        return [{"title": r["title"], "score": r.score, "highlights": r.highlights("content", top=3), "content": r.get("content", "")[:200]} for r in results]
+
+def extract_core_keywords(query):
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "你是一个专门用于提取核心关键词的AI助手。请提取最重要的医学术语和症状。"},
+            {"role": "user", "content": f"从以下问题中提取3-5个最重要的核心关键词，这些关键词应该是搜索医疗文档时最有可能找到相关信息的词。问题：{query}"}
+        ],
+        max_tokens=50
+    )
+    keywords = response.choices[0].message.content.strip().split(', ')
+    return [keyword.strip() for keyword in keywords if keyword.strip()]  # 移除空字符串
+
+medical_synonyms = {
+    "脑梗死": ["脑梗塞", "缺血性脑卒中"],
+    "白细胞": ["白血球", "WBC"],
+    # 添加更多同义词...
+}
+
+def expand_query(query):
+    expanded_terms = [query]
+    for term in query.split():
+        if term in medical_synonyms:
+            expanded_terms.extend(medical_synonyms[term])
+    return " OR ".join(expanded_terms)
+
+def check_index_content(term):
+    ix = open_dir("fulltext_index")
+    with ix.searcher() as searcher:
+        results = searcher.search(Term("content", term))
+        print(f"搜索 '{term}' 的结果数量: {len(results)}")
+        for hit in results:
+            print(f"文档: {hit['title']}")
+            print(f"内容片段: {hit.highlights('content')}")
