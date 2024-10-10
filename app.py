@@ -230,6 +230,25 @@ def main():
                             st.subheader("关系:")
                             for relation in result['relations']:
                                 st.write(f"- {relation['source']} --[{relation['relation']}]--> {relation['target']}")
+                        
+                        # 生成并显示关系图
+                        G = nx.Graph()
+                        for entity in result['entities']:
+                            G.add_node(entity['name'], category=entity['category'])
+                        for relation in result['relations']:
+                            G.add_edge(relation['source'], relation['target'], relation=relation['relation'])
+                        
+                        net = Network(notebook=True, width="100%", height="500px", bgcolor="#222222", font_color="white")
+                        net.from_nx(G)
+                        net.toggle_physics(True)
+                        net.show_buttons(filter_=['physics'])
+                        net.save_graph("temp_graph.html")
+                        
+                        with open("temp_graph.html", "r", encoding="utf-8") as f:
+                            graph_html = f.read()
+                        
+                        st.subheader("电子病历关系图")
+                        components.html(graph_html, height=600)
                 
                 with col2:
                     if st.button("加载到向量数据库", key=f"vector_{uploaded_file.name}"):

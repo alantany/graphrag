@@ -293,101 +293,117 @@ def delete_index(file_name):
                 f.write('\n'.join(file_list))
 
 def process_data(content, file_name):
-    logger.info("开始处理数据")
+    logger.info("开始处理电子病历数据")
     logger.info(f"接收到的内容: {content[:200]}...")  # 打印前200个字符
 
-    # 改进的提示词
+    # 改进的提示词，针对电子病历
     prompt = f"""
-    请从以下医疗记录中提取所有要的实体和关系。
-    实体应包括但不限于：患者姓名、年龄、性别、诊断、症状、检查、治疗、药物、生理指标等。
-    关系应描述实体之间的所有可能联系，如"患有""接受检查"、"使用药物"、"属性"等。
-    请确保每个实体都至少有一个关系。对于没有明关系的性（如性别、年龄等），请使用"属性"作为关系类型。
-    请尽可能详细地取关系，不要遗任何可能的连接。
-    请以JSON格式输出，格式如下：
+    请仔细分析以下电子病历，并提取所有重要信息。特别注意以下几点：
+
+    1. 首先识别并提取患者的姓名。这是最重要的信息，所有其他信息都应与患者姓名关联。
+    2. 提取关键的患者信息，包括但不限于：
+       - 年龄
+       - 性别
+       - 入院日期
+       - 出院日期
+       - 住院天数
+    3. 识别并提取主要诊断信息。
+    4. 提取所有相关的医疗信息，包括但不限于：
+       - 主诉
+       - 现病史
+       - 既往史
+       - 个人史
+       - 家族史
+       - 体格检查结果
+       - 辅助检查结果（如血常规、影像学检查等）
+       - 诊疗经过
+       - 用药情况
+       - 手术信息（如果有）
+    5. 识别任何并发症、特殊情况或注意事项。
+    6. 提取出院诊断、出院医嘱等出院相关信息。
+
+    对于每个提取的实体或信息，请建立与患者姓名的直接关系。如果找不到明确的关系类型，请使用"相关"作为默认关系。
+
+    请以JSON格式输出��式如下：
     {{
-        "entities": ["实体1", "实体2", ...],
+        "patient_name": "患者姓名",
+        "entities": [
+            {{"name": "实体1", "category": "类别1"}},
+            {{"name": "实体2", "category": "类别2"}},
+            ...
+        ],
         "relations": [
-            {{"source": "实1", "relation": "关系", "target": "实体2"}},
+            {{"source": "患者姓名", "relation": "关系", "target": "实体1"}},
+            {{"source": "患者姓名", "relation": "关系", "target": "实体2"}},
             ...
         ]
     }}
 
-    医疗记录：
+    请确保每个实体都与患者姓名建立了关系，并尽可能详细地提取信息。对于没有明确关系类型的实体，请使用"属性"作为关系类型。
+
+    电子病历内容：
     {content}
     """
 
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="gpt-3.5-turbo",  # 使用允许的模型
         messages=[
-            {"role": "system", "content": "你是一个医疗信息提取助手，擅长医疗记录中提取体和关系请尽可能详地提取所相关信息。"},
+            {"role": "system", "content": "你是一个专门处理电子病历的AI助手，擅长从复杂的医疗记录中提取关键信息和关系。请尽可能详细地提取所有相关信息，并确保所有信息都与患者姓名建立关系。"},
             {"role": "user", "content": prompt}
-        ]
+        ],
+        max_tokens=2000  # 减少 token 限制以适应 gpt-3.5-turbo 的限制
     )
 
     result = response.choices[0].message.content
     logger.info(f"OpenAI API 返回的原始内容: {result}")
 
     try:
-        # 尝清理和解JSON
+        # 尝试清理和解析JSON
         cleaned_result = re.search(r'\{.*\}', result, re.DOTALL)
         if cleaned_result:
             extracted_data = json.loads(cleaned_result.group())
         else:
-            raise ValueError("法在返回结果中找到有效的JSON")
+            raise ValueError("无法在返回结果中找到有效的JSON")
 
+        patient_name = extracted_data['patient_name']
         entities = extracted_data['entities']
         relations = extracted_data['relations']
 
-        # 保所有实体都是字符串
-        entities = [str(e) for e in entities]
+        # 确保所有实体都是字典，包含name和category
+        entities = [e if isinstance(e, dict) else {"name": str(e), "category": "未分类"} for e in entities]
         
         # 确保所有关系都是字典，且包含必要的键
         relations = [
             r if isinstance(r, dict) and all(k in r for k in ['source', 'relation', 'target'])
-            else {'source': str(r[0]), 'relation': str(r[1]), 'target': str(r[2])}
+            else {'source': patient_name, 'relation': "相关", 'target': str(r)}
             for r in relations
         ]
 
+        # 确保所有实体都与患者名字建立了关系
+        existing_relations = set((r['source'], r['target']) for r in relations)
+        for entity in entities:
+            if (patient_name, entity['name']) not in existing_relations and (entity['name'], patient_name) not in existing_relations:
+                relations.append({'source': patient_name, 'relation': "相关", 'target': entity['name']})
+
     except json.JSONDecodeError as e:
         logger.error(f"无法解析OpenAI返回的JSON: {str(e)}")
-        # 使用则表达式提取实体关系
-        entities = re.findall(r'"([^"]+)"', result)
+        # 使用正则表达式提取实体和关系
+        patient_name = re.search(r'"patient_name":\s*"([^"]+)"', result)
+        patient_name = patient_name.group(1) if patient_name else "未知患者"
+        entities = [{"name": e, "category": "未分类"} for e in re.findall(r'"name":\s*"([^"]+)"', result)]
         relations = [
-            {'source': m[0], 'relation': m[1], 'target': m[2]}
-            for m in re.findall(r'\{"source": "([^"]+)", "relation": "([^"]+)", "target": "([^"]+)"\}', result)
+            {'source': patient_name, 'relation': "相关", 'target': entity['name']}
+            for entity in entities
         ]
     except Exception as e:
         logger.error(f"处理OpenAI返回结果时出错: {str(e)}")
+        patient_name = "未知患者"
         entities = []
         relations = []
 
+    logger.info(f"患者姓名: {patient_name}")
     logger.info(f"提取的实体: {entities}")
     logger.info(f"提取的关系: {relations}")
-
-    # 后处理逻辑
-    patient_name = next((e for e in entities if "姓名" in e or "患者" in e), None)
-    if patient_name:
-        for entity in entities:
-            if entity != patient_name and not any(r['source'] == patient_name and r['target'] == entity for r in relations):
-                if entity in ["女", "男"]:
-                    relations.append({"source": patient_name, "relation": "性别", "target": entity})
-                elif entity.isdigit() or "岁" in entity:
-                    relations.append({"source": patient_name, "relation": "年龄", "target": entity})
-                elif entity in ["血糖", "血压", "体重", "心率", "体"]:
-                    relations.append({"source": patient_name, "relation": "生理指", "target": entity})
-                elif entity in ["口干", "多尿", "多食", "体重下降"]:
-                    relations.append({"source": patient_name, "relation": "症状", "target": entity})
-                elif "检查" in entity or entity in ["心图", "胸片", "肌电图", "超声", "眼科检查", "GFR", "CGMS"]:
-                    relations.append({"source": patient_name, "relation": "接受检查", "target": entity})
-                elif "病" in entity or "症" in entity:
-                    relations.append({"source": patient_name, "relation": "患有", "target": entity})
-                elif "药" in entity or entity in ["胰岛素", "拜糖平", "二甲双胍", "诺和灵", "优泌灵"]:
-                    relations.append({"source": patient_name, "relation": "使用药物", "target": entity})
-                else:
-                    relations.append({"source": patient_name, "relation": "相关", "target": entity})
-
-    logger.info(f"处理后的实体: {entities}")
-    logger.info(f"处理的关系: {relations}")
 
     driver = get_neo4j_driver()
     
@@ -399,71 +415,84 @@ def process_data(content, file_name):
         DETACH DELETE n
         """, file_name=file_name)
 
-        # 创建实体
-        created_entities = 0
+        # 创建患者节点
+        session.run("""
+        MERGE (p:Entity {name: $name, type: 'Patient', source: $file_name})
+        SET p.content = $content
+        """, name=patient_name, content=content, file_name=file_name)
+
+        # 创建全文索引（如果不存在）
+        session.run("""
+        CALL db.index.fulltext.createNodeIndex("entityFulltextIndex", ["Entity"], ["name", "content"])
+        """)
+
+        # 创建其他实体并与患者建立关系
         for entity in entities:
-            result = session.run("""
-            MERGE (n:Entity {name: $name, source: $file_name}) 
-            SET n.content = $content
-            RETURN count(*)
-            """, name=str(entity).strip(), content=content, file_name=file_name)
-            count = result.single()[0]
-            created_entities += count
-            logger.info(f"创建或更新实体: {entity}, 影响的节点数: {count}")
-        
-        # 创建关系
-        created_relations = 0
+            session.run("""
+            MATCH (p:Entity {name: $patient_name, source: $file_name})
+            MERGE (e:Entity {name: $entity_name, category: $entity_category, source: $file_name})
+            """, patient_name=patient_name, entity_name=entity['name'], entity_category=entity['category'], file_name=file_name)
+
         for relation in relations:
-            if isinstance(relation, dict):
-                source, rel_type, target = relation['source'], relation['relation'], relation['target']
-            else:
-                source, rel_type, target = relation
-            result = session.run("""
-            MATCH (a:Entity {name: $source, source: $file_name})
-            MATCH (b:Entity {name: $target, source: $file_name})
-            MERGE (a)-[r:RELATED_TO {type: $rel_type}]->(b)
-            SET r.content = $content
-            RETURN count(*)
-            """, source=str(source).strip(), target=str(target).strip(), rel_type=str(rel_type).strip(), content=content, file_name=file_name)
-            count = result.single()[0]
-            created_relations += count
-            logger.info(f"创建或更新关系: {source} -{rel_type}-> {target}, 影响的关系数: {count}")
-    
-    logger.info(f"处理了 {len(entities)} 个实体和 {len(relations)} 个关系")
-    logger.info(f"实际创建或更新了 {created_entities} 个实体和 {created_relations} 个关系")
+            session.run("""
+            MATCH (s:Entity {name: $source, source: $file_name})
+            MATCH (t:Entity {name: $target, source: $file_name})
+            MERGE (s)-[r:RELATED_TO {type: $relation_type}]->(t)
+            """, source=relation['source'], target=relation['target'], relation_type=relation['relation'], file_name=file_name)
+
+    logger.info(f"处理了 1 个患者节点、{len(entities)} 个实体和 {len(relations)} 个关系")
     driver.close()
-    return {"entities": entities, "relations": relations}
+    return {"patient_name": patient_name, "entities": entities, "relations": relations}
 
 def query_graph(query):
     logger.info(f"执行图查询: {query}")
-    driver = GraphDatabase.driver(
-        CURRENT_NEO4J_CONFIG["URI"],
-        auth=(CURRENT_NEO4J_CONFIG["USERNAME"], CURRENT_NEO4J_CONFIG["PASSWORD"])
-    )
+    driver = get_neo4j_driver()
     
     with driver.session() as session:
+        # 使用模糊匹配和双向关系查询
         result = session.run("""
         CALL db.index.fulltext.queryNodes("entityFulltextIndex", $query) YIELD node, score
-        OPTIONAL MATCH (node)-[r]-(m)
-        RETURN node.name AS Entity, type(r) AS Relation, r.type AS RelationType, m.name AS Related, node.content AS Content, score
+        OPTIONAL MATCH (node)-[r]-(related)
+        WHERE related.source IS NOT NULL
+        RETURN node.name AS Entity, type(r) AS Relation, r.type AS RelationType, 
+               related.name AS Related, node.content AS Content, node.source AS Source,
+               related.source AS RelatedSource, score
         ORDER BY score DESC
-        LIMIT 10
+        LIMIT 20
         """, {"query": query})
         
         entities = set()
         relations = []
         contents = {}
         for record in result:
-            if record["Entity"]:
-                entities.add(record["Entity"])
-                contents[record["Entity"]] = record["Content"]
-            if record["Related"]:
-                entities.add(record["Related"])
-                relations.append({
-                    "source": record["Entity"],
-                    "relation": record["RelationType"] or record["Relation"],
-                    "target": record["Related"]
-                })
+            entity = record["Entity"]
+            related = record["Related"]
+            relation_type = record["RelationType"] or record["Relation"]
+            
+            if entity and related:
+                entities.add(entity)
+                entities.add(related)
+                relation = {
+                    "source": entity,
+                    "relation": relation_type,
+                    "target": related
+                }
+                if relation not in relations:
+                    relations.append(relation)
+                
+                # 添加反向关系
+                reverse_relation = {
+                    "source": related,
+                    "relation": f"反向_{relation_type}",
+                    "target": entity
+                }
+                if reverse_relation not in relations:
+                    relations.append(reverse_relation)
+            
+            if entity:
+                contents[entity] = record["Content"]
+            if related:
+                contents[related] = record["Content"]
     
     driver.close()
     logger.info(f"查询结果 - 实体: {entities}")
@@ -477,20 +506,23 @@ def hybrid_search(query):
         entities, relations, contents = query_graph(query)
         
         if not entities and not relations:
-            return "抱歉，我没有找到与您的问题相关的信息。请尝试用不同的方式问，或者确认所查询的信息是否已经录入系统。", [], []
+            return "抱歉，我没有找到与您的问题相关的信息。请尝试用不同的方式提问，或者确认所查询的信息是否已经录入系统。", [], []
         
-        # 限制上下文大小
-        max_entities = 10
-        max_relations = 20
+        # 处理间接关系
+        related_entities = set()
+        for relation in relations:
+            related_entities.add(relation['source'])
+            related_entities.add(relation['target'])
+        
         context = f"基于以下实体信息：\n"
-        for entity in entities[:max_entities]:
+        for entity in related_entities:
             content = contents.get(entity, '无详细信息')
             if content is not None:
                 context += f"{entity}: {content[:200]}...\n"
             else:
                 context += f"{entity}: 无详细信息\n"
         context += "相关关系：\n"
-        for relation in relations[:max_relations]:
+        for relation in relations:
             context += f"{relation['source']} {relation['relation']} {relation['target']}\n"
         
         prompt = f"{context}\n\n请根据上述信息回答问题：{query}\n\n回答："
@@ -500,7 +532,7 @@ def hybrid_search(query):
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "你是一个医疗助手根据给定的实体信息和关系准确回答问题。如果信息不足请如实说明。"},
+                {"role": "system", "content": "你是一个医疗助手，根据给定的实体信息和关系准确回答问题。请直接使用提供的信息，不要添加未给出的假设。如果信息不足，请如实说明。"},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=150
@@ -511,14 +543,14 @@ def hybrid_search(query):
         if response and response.choices and len(response.choices) > 0 and response.choices[0].message:
             answer = response.choices[0].message.content.strip()
             if not answer:
-                answer = "抱歉，我无法根据提供的信息回答这个问题。请尝试提供更多细节或以不同的方式问。"
+                answer = "抱歉，我无法根据提供的信息回答这个问题。请尝试提供更多细节或以不同的方式提问。"
         else:
             answer = "抱歉，处理您的问题时出现了意外情况。请稍后再试。"
         
         logger.info(f"搜索结果: {answer}")
-        return answer, entities, relations
+        return answer, list(entities), relations
     except Exception as e:
-        logger.error(f"混合搜索过程中发生错误: {str(e)}", exc_info=True)
+        logger.error(f"混合搜索过程中发生��误: {str(e)}", exc_info=True)
         return f"抱歉，在处理您的问题时发生了错误: {str(e)}", [], []
 
 # 文件末尾添加以下函数
@@ -591,7 +623,7 @@ def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, 
 
     向量数据库回答：{vector_answer}
 
-    全检索结果：
+    全文检索结果：
     {' '.join([f"文档: {result['title']}, 内容: {result['content']}" for result in fulltext_results[:5]])}
 
     全文检索匹配文档数量：{len(fulltext_results)}
@@ -599,27 +631,27 @@ def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, 
     相关原文：{excerpt}
 
     请提供一个综合的回答，包括：
-    1. 直接回答问题，综合考虑所有数据源的信息
+    1. 直接回答问题，综合考虑所有数据源的信息，特别是图数据库中的关系信息
     2. 详细的推理过程，解释如何得出结论
     3. 使用的证据及其来源（包括图数据库、向量数据库和全文检索）
     4. 如果不同数据源之间存在矛盾，请指出并解释可能的原因
     5. 如果存在不确定性，请说明原因并给出建议
 
     注意：
-    - 图数据库的信息通常更精确，但可能不完整
+    - 图数据库的信息通常更精确，请优先考虑图数据库中的关系信息
     - 全文检索结果可能提供更广泛的上下文，请充分利用这些信息
     - 向量数据库的结果可能提供额外的相关信息
 
-    请确保回答全面且准确，不要忽视任何重要信息。
+    请确保回答全面且准确，不要忽视任何重要信息，特别是图数据库中的关系信息。
     """
     
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "你是一个智能助手，能够综合分析来自不同数据源的信息，并提供准确、全面的回答。你需要仔细考虑所有提供的信息，特别是要注意全文检索的结果数量和内容。"},
+            {"role": "system", "content": "你是个智能助手，能够综合分析来自不同数据源的信息，并提供准确、全面的回答。你需要仔细考虑所有提供的信息，特别是要注意图数据库中的关系信息。"},
             {"role": "user", "content": prompt}
         ],
-        max_tokens=800  # 增加 token 限允许更详细的回答
+        max_tokens=800
     )
     
     return response.choices[0].message.content.strip()
@@ -724,7 +756,7 @@ class OpenAIAnalyzer(Analyzer):
 
 def create_fulltext_index(content, file_name):
     logger.info(f"开始为文件 {file_name} 创建或更新全文索")
-    logger.info(f"文件内容长度: {len(content)}")
+    logger.info(f"文件内容长: {len(content)}")
     logger.info(f"文件内容前200字符: {content[:200]}")
     
     if not os.path.exists("fulltext_index"):
@@ -798,7 +830,7 @@ def extract_core_keywords(query):
         messages=[
             {"role": "system", "content": "你是一个专门用于提取医疗领域核心关键词的AI助手。请从给定的问题中提取最重要的医学术语或症状描述。"},
             {"role": "user", "content": f"""
-            从以下问题中提取2-3个最重要的心关键词。这些关键词应该是搜索医疗文档时最有可能到相关信词。
+            从以下问题中提取2-3个最重要的核心关键词。这些关键词应该是搜索医疗文档时最有可能找到相关信息的词。
             
             注意：
             1. 常见词"患者"、"病人"、"医生"、"医院"等不应被视为核心关键词，除非它们是问题的主要焦点。
