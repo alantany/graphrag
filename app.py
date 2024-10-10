@@ -36,6 +36,12 @@ from whoosh.query import Term
 # 在文件顶部的导入语句之后添加
 from data_processor import faiss_id_to_text, faiss_id_counter, faiss_index
 
+# 初始化 OpenAI 客户端
+client = OpenAI(
+    api_key="sk-iM6Jc42voEnIOPSKJfFY0ri7chsz4D13sozKyqg403Euwv5e",  # 使用您的 API 密钥
+    base_url="https://api.chatanywhere.tech/v1"
+)
+
 # 设置面配置
 st.set_page_config(
     page_title="AI知识问答系统",
@@ -220,7 +226,7 @@ def main():
                             delete_graph_data(uploaded_file.name)
                             # 添加新数据
                             result = process_data(content, uploaded_file.name)
-                        st.success(f"文�� {uploaded_file.name} 已成功加载到图数据库！")
+                        st.success(f"文 {uploaded_file.name} 已成功加载到图数���库！")
                         st.write(f"处理了 {len(result['entities'])} 个实体和 {len(result['relations'])} 个关系")
                         
                         # 示处理结果的详细信息
@@ -330,7 +336,7 @@ def main():
     with tab2:
         st.header("知识库问答")
         
-        qa_type = st.radio("选择问答类型", ["向量数据库问答", "图数据库问答", "混合问答"])
+        qa_type = st.radio("选择问答类型", ["向量数据库问答", "图数据库问答", "全文索引问答", "混合问答"])
         
         if qa_type == "向量数据库问答":
             st.subheader("向量数据库问答")
@@ -352,13 +358,119 @@ def main():
         elif qa_type == "图数据库问答":
             st.subheader("图数据库问答")
             with st.form(key='graph_qa_form'):
-                graph_query = st.text_input("请输入您的题（图数据库）")
+                graph_query = st.text_input("请输入您的问题（图数据库）")
                 submit_button = st.form_submit_button(label='提交问题')
             if submit_button and graph_query:
                 with st.spinner("正在查询..."):
-                    answer = hybrid_search(graph_query)
-                st.write("回答：", answer)
+                    answer, entities, relations = hybrid_search(graph_query)
+                    
+                    # 使用 OpenAI API 生成综合回答
+                    context = f"""
+                    基于图数据库的查询结果：
+                    回答：{answer}
+                    实体：{', '.join(entities)}
+                    关系：{'; '.join([f"{r['source']} --[{r['relation']}]--> {r['target']}" for r in relations])}
+                    
+                    请根据以上信息，生成一个简洁明了的综合回答。回答应该直接针对问题"{graph_query}"，并包含所有相关的重要信息。
+                    """
+                    
+                    response = client.chat.completions.create(
+                        model="gpt-3.5-turbo",
+                        messages=[
+                            {"role": "system", "content": "你是一个专门解释图数据库查询结果的AI助手。请提供准确、简洁的回答。"},
+                            {"role": "user", "content": context}
+                        ],
+                        max_tokens=200
+                    )
+                    
+                    final_answer = response.choices[0].message.content.strip()
+                    
+                    st.write("综合回答：", final_answer)
+                    
+                    st.write("图数据库查询结果：")
+                    st.write("实体：", ", ".join(entities))
+                    st.write("关系：")
+                    for relation in relations:
+                        st.write(f"- {relation['source']} --[{relation['relation']}]--> {relation['target']}")
+                    
+                    # 创建并显示关系图
+                    G = nx.Graph()
+                    for entity in entities:
+                        G.add_node(entity)
+                    for relation in relations:
+                        G.add_edge(relation['source'], relation['target'], title=relation['relation'])
+                    
+                    net = Network(notebook=True, width="100%", height="500px", bgcolor="#222222", font_color="white")
+                    net.from_nx(G)
+                    net.save_graph("graph.html")
+                    
+                    with open("graph.html", 'r', encoding='utf-8') as f:
+                        html_string = f.read()
+                    st.write("图数据库关系图谱：")
+                    components.html(html_string, height=600)
         
+        elif qa_type == "全文索引问答":
+            st.subheader("全文索引问答")
+            with st.form(key='fulltext_qa_form'):
+                fulltext_query = st.text_input("请输入您的问题（全文索引）")
+                submit_button = st.form_submit_button(label='提交问题')
+            if submit_button and fulltext_query:
+                with st.spinner("正在查询..."):
+                    try:
+                        fulltext_results = search_fulltext_index(fulltext_query)
+                        if fulltext_results:
+                            # 准备上下文
+                            context = "\n\n".join([f"文档: {result['title']}\n内容: {result['content']}" for result in fulltext_results[:3]])
+                            
+                            # 使用 OpenAI API 生成总结答案
+                            prompt = f"""基于以下从全文索引中检索到的信息，请回答问题并提供简洁明了的总结：
+
+问题：{fulltext_query}
+
+检索到的信息：
+{context}
+
+请提供一个综合的回答，包括：
+1. 直接回答问题
+2. 对检索到的信息进行简要总结
+3. 如果信息不足以完全回答问题，请说明并提供可能的下一步建议
+
+回答："""
+
+                            response = client.chat.completions.create(
+                                model="gpt-3.5-turbo",
+                                messages=[
+                                    {"role": "system", "content": "你是一个专门用于总结和回答问题的AI助手。请基于给定的信息提供准确、简洁的回答。"},
+                                    {"role": "user", "content": prompt}
+                                ],
+                                max_tokens=300
+                            )
+
+                            summary = response.choices[0].message.content.strip()
+                            
+                            # 显示总结答案
+                            st.write("回答：")
+                            st.write(summary)
+                            
+                            # 显示原始检索结果
+                            st.write("\n原始检索结果：")
+                            for result in fulltext_results[:3]:  # 显示前3个结果
+                                st.write(f"- 文档: {result['title']}, 相关度: {result['score']:.2f}")
+                                highlights = result['highlights']
+                                # 处理高亮文本
+                                highlights = re.sub(r'<b class="match term\d+">', '**', highlights)
+                                highlights = highlights.replace('</b>', '**')
+                                # 将连续的星号合并
+                                highlights = re.sub(r'\*{2,}', '**', highlights)
+                                # 移除可能残留的HTML标签
+                                highlights = re.sub(r'<[^>]+>', '', highlights)
+                                st.markdown(f"  匹配内容: {highlights}")
+                                st.write(f"  文档内容片段: {result['content'][:200]}...")  # 只显示前200个字符
+                        else:
+                            st.write("全文检索未找到相关结果。")
+                    except Exception as e:
+                        st.error(f"全文检索出错: {str(e)}")
+
         else:  # 混合问答
             st.subheader("混合问答")
             with st.form(key='hybrid_qa_form'):
