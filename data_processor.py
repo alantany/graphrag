@@ -83,7 +83,7 @@ def set_neo4j_config(config_type):
         return False
     
     if not all(CURRENT_NEO4J_CONFIG.values()):
-        logger.error(f"Neo4j 配置不完整: {CURRENT_NEO4J_CONFIG}")
+        logger.error(f"Neo4j 配置不完���: {CURRENT_NEO4J_CONFIG}")
         return False
     
     logger.info(f"Neo4j 配已设置: URI={CURRENT_NEO4J_CONFIG['URI']}, USERNAME={CURRENT_NEO4J_CONFIG['USERNAME']}")
@@ -157,7 +157,7 @@ def extract_keywords(text, top_k=5):
     # 使用最后一层的隐藏状态
     last_hidden_state = outputs.last_hidden_state[0]
     
-    # 计算每个词的重要得分（这里使用简单的L2数）
+    # 计算每个词的重要得分（���里使用简单的L2数）
     word_importance = torch.norm(last_hidden_state, dim=1)
     
     # 获取top_k个重要的词
@@ -300,7 +300,7 @@ def process_data(content, file_name):
        - 个人史
        - 家族史
        - 体格检查结果
-       - 辅助检查结果（如血常规、影像学检查等）
+       - 辅助检查结果��如血常规、影像学检查等）
        - 诊疗经过
        - 用药情况
        - 手术信息（如果有
@@ -406,10 +406,25 @@ def process_data(content, file_name):
         SET p.content = $content
         """, name=patient_name, content=content, file_name=file_name)
 
-        # 创建全文索引（如果不存在）
-        session.run("""
-        CALL db.index.fulltext.createNodeIndex("entityFulltextIndex", ["Entity"], ["name", "content"])
-        """)
+        # 检查全文索引是否存在
+        try:
+            index_exists = session.run("""
+            CALL db.indexes() YIELD name, labelsOrTypes, properties
+            WHERE name = 'entityFulltextIndex'
+            RETURN count(*) > 0 AS exists
+            """).single()['exists']
+
+            if not index_exists:
+                # 尝试创建全文索引
+                try:
+                    session.run("""
+                    CALL db.index.fulltext.createNodeIndex('entityFulltextIndex', ['Entity'], ['name', 'content'])
+                    """)
+                    logger.info("全文索引创建成功")
+                except Exception as e:
+                    logger.warning(f"创建全文索引失败: {str(e)}. 继续执行其他操作。")
+        except Exception as e:
+            logger.warning(f"检查或创建全文索引时出错: {str(e)}. 继续执行其他操作。")
 
         # 创建其他实体并与患者建立关系
         for entity in entities:
@@ -491,7 +506,7 @@ def hybrid_search(query):
         entities, relations, contents = query_graph(query)
         
         if not entities and not relations:
-            return "抱歉，我没有找到与您的问题相关的信息。请尝试用不同的方式提问，或者确认所查询的信息是否已经录入系��。", [], []
+            return "抱歉，我没有找到与您的问题相关的信息。请尝试用不同的方式提问，或者确认所查询的信息是否已经录入系。", [], []
         
         # 处理间接关系
         related_entities = set()
