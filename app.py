@@ -58,7 +58,8 @@ st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # 初始化 OpenAI 客户端
 initialize_openai(
-    api_key="sk-1pUmQlsIkgla3CuvKTgCrzDZ3r0pBxO608YJvIHCN18lvOrn",
+    #api_key="sk-1pUmQlsIkgla3CuvKTgCrzDZ3r0pBxO608YJvIHCN18lvOrn", free版
+    api_key="sk-iM6Jc42voEnIOPSKJfFY0ri7chsz4D13sozKyqg403Euwv5e", #收费版
     base_url="https://api.chatanywhere.tech/v1"
 )
 
@@ -136,12 +137,12 @@ def main():
     
     # 如果有索引，将它们添加到 FAISS 索引中
     if st.session_state.file_indices:
-        for file_name, (chunks, index) in st.session_state.file_indices.items():
+        for file_name, (chunks, index, patient_name) in st.session_state.file_indices.items():
             for i, chunk in enumerate(chunks):
                 st.session_state.faiss_id_to_text[st.session_state.faiss_id_counter + i] = chunk
             vectors = index.reconstruct_n(0, index.ntotal)
             faiss_index.add(vectors)
-        st.session_state.faiss_id_counter += sum(len(chunks) for chunks, _ in st.session_state.file_indices.values())
+        st.session_state.faiss_id_counter += sum(len(chunks) for chunks, _, _ in st.session_state.file_indices.values())
 
     # Neo4j 配置选择
     col1, col2, col3 = st.columns(3)
@@ -175,7 +176,7 @@ def main():
             except Exception as e:
                 connection_status += f" - 连接错误: {str(e)}"
         else:
-            connection_status += " - 配置无效或未设置"
+            connection_status += " - 配置无效或未置"
 
     st.write(connection_status)
 
@@ -257,11 +258,12 @@ def main():
                             if uploaded_file.name in st.session_state.file_indices:
                                 delete_vector_data(uploaded_file.name)
                             # 添加新数据
-                            chunks, index = vectorize_document(content, max_tokens)
-                            st.session_state.file_indices[uploaded_file.name] = (chunks, index)
-                            save_index(uploaded_file.name, chunks, index)
+                            chunks, index, patient_name = vectorize_document(content, uploaded_file.name, max_tokens)
+                            st.session_state.file_indices[uploaded_file.name] = (chunks, index, patient_name)
+                            save_index(uploaded_file.name, chunks, index, patient_name)
                         st.success(f"文档 {uploaded_file.name} 已成功加载到向量数据库！")
                         st.write(f"向 FAISS 向量数据库添加了 {len(chunks)} 个文本段落")
+                        st.write(f"患者姓名: {patient_name}")
                 
                 with col3:
                     if st.button("创建全文索引", key=f"fulltext_{uploaded_file.name}"):
@@ -269,7 +271,7 @@ def main():
                             try:
                                 # 先删除旧索引
                                 delete_fulltext_index(uploaded_file.name)
-                                # 创建新索引
+                                # 创索引
                                 create_fulltext_index(content, uploaded_file.name)
                                 st.success(f"文档 {uploaded_file.name} 已成功创建全文索引！")
                                 # 添加验证步骤
@@ -333,16 +335,16 @@ def main():
         if qa_type == "向量数据库问答":
             st.subheader("向量数据库问答")
             with st.form(key='vector_qa_form'):
-                vector_query = st.text_input("请输您的问题（向量数据库）")
+                vector_query = st.text_input("请输入您的问题（向量数据库）")
                 submit_button = st.form_submit_button(label='提交问题')
             if submit_button and vector_query:
                 with st.spinner("正在查询..."):
-                    answer, sources, excerpt = rag_qa(vector_query, st.session_state.file_indices)
+                    answer, sources, excerpt = rag_qa(vector_query, st.session_state.file_indices,k=10)
                 st.write("回答：", answer)
                 if sources:
                     st.write("参考来源：")
-                    for source, _ in sources:
-                        st.write(f"- {source}")
+                    for source in sources:
+                        st.write(f"- 文件: {source['file_name']}, 患者: {source['patient_name']}")
                 if excerpt:
                     st.write("相关原文：")
                     st.write(excerpt)
@@ -548,7 +550,7 @@ def main():
                             all_docs = list(searcher.all_stored_fields())
                             st.write(f"全文索引中共有 {len(all_docs)} 个文档")
                             for doc in all_docs:
-                                st.write(f"- 文档: {doc['title']}")
+                                st.write(f"- 文���: {doc['title']}")
                     except Exception as e:
                         st.error(f"获取全文索引信息时出错: {str(e)}")
 
@@ -615,12 +617,13 @@ def main():
                         st.write(f"已索引的文档数量: {len(st.session_state.file_indices)}")
                         
                         st.write("\n文件详细信息:")
-                        for file_name, (chunks, index) in st.session_state.file_indices.items():
+                        for file_name, (chunks, index, patient_name) in st.session_state.file_indices.items():
                             st.write(f"- 文件: {file_name}")
+                            st.write(f"  患者: {patient_name}")
                             st.write(f"  向量数量: {len(chunks)}")
                             st.write(f"  文本块数量: {len(chunks)}")
                         
-                        if total_vectors != sum(len(chunks) for chunks, _ in st.session_state.file_indices.values()):
+                        if total_vectors != sum(len(chunks) for chunks, _, _ in st.session_state.file_indices.values()):
                             st.warning("注意：向量总数与文件索引中的向量数量不匹配，可能存在孤立向量。")
                         
                         if total_vectors == 0 and len(st.session_state.file_indices) == 0:
@@ -668,6 +671,30 @@ def main():
                         st.rerun()
                     except Exception as e:
                         st.error(f"删除向量数据时出错: {str(e)}")
+
+            if st.button("重新处理所有文档"):
+                with st.spinner("正在重新处理所有文档..."):
+                    try:
+                        # 清除现有的向量数据
+                        clear_vector_data()
+                        st.session_state.file_indices = {}
+
+                        # 重新处理所有文档
+                        for file_name in os.listdir('indices'):
+                            if file_name.endswith('.pkl'):
+                                file_path = os.path.join('indices', file_name)
+                                with open(file_path, 'rb') as f:
+                                    content = pickle.load(f)[0]  # 假设内容是第一个元素
+                                
+                                # 重新向量化文档
+                                chunks, index, patient_name = vectorize_document(content, file_name[:-4], max_tokens)
+                                st.session_state.file_indices[file_name[:-4]] = (chunks, index, patient_name)
+                                save_index(file_name[:-4], chunks, index, patient_name)
+
+                        st.success("所有文档已重新处理完成")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"重新处理文档时出错: {str(e)}")
 
 if __name__ == "__main__":
     main()

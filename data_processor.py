@@ -108,18 +108,25 @@ def num_tokens_from_string(string: str) -> int:
     return len(encoding.encode(string))
 
 # 文档向量化模块
-def vectorize_document(content, max_tokens):
+def vectorize_document(content, file_name, max_tokens):
+    # 从文件名中提取患者姓名（去掉.pdf后缀）
+    patient_name = os.path.splitext(file_name)[0]
+    logger.info(f"从文件名 {file_name} 中提取的患者姓名: {patient_name}")
+    
     chunks = []
     current_chunk = ""
-    for sentence in content.split('.'):
-        if num_tokens_from_string(current_chunk + sentence) > max_tokens:
+    sentences = content.split('。')
+    
+    for sentence in sentences:
+        if len(current_chunk) + len(sentence) > max_tokens:
             if current_chunk:
-                chunks.append(current_chunk)
+                chunks.append(f"患者：{patient_name}。{current_chunk}")
             current_chunk = sentence
         else:
-            current_chunk += sentence + '.'
+            current_chunk += sentence + "。"
+    
     if current_chunk:
-        chunks.append(current_chunk)
+        chunks.append(f"患者：{patient_name}。{current_chunk}")
     
     vectors = model.encode(chunks)
     index = faiss.IndexFlatL2(384)  # 384是向量维度,根据实际模型调整
@@ -131,7 +138,13 @@ def vectorize_document(content, max_tokens):
         faiss_index = faiss.IndexFlatL2(384)
     faiss_index.add(vectors)
     
-    return chunks, index
+    logger.info(f"文件 {file_name} 已被分成 {len(chunks)} 个文本块")
+    return chunks, index, patient_name
+
+# 添加提取患者姓名的函数
+def extract_patient_name(file_name):
+    # 直接从文件名提取患者姓名（去掉.pdf后缀）
+    return os.path.splitext(file_name)[0]
 
 # 提取关键词
 def extract_keywords(text, top_k=5):
@@ -156,103 +169,75 @@ def extract_keywords(text, top_k=5):
 # 基于关键词搜文
 def search_documents(keywords, file_indices):
     relevant_docs = []
-    for file_name, (chunks, _) in file_indices.items():
+    for file_name, (chunks, _, _) in file_indices.items():
         doc_content = ' '.join(chunks)
         if any(keyword in doc_content for keyword in keywords):
             relevant_docs.append(file_name)
     return relevant_docs
 
 # 知识问答模块
-def rag_qa(query, file_indices, relevant_docs=None):
-    global client
-    if client is None:
-        raise ValueError("OpenAI client not initialized. Please call initialize_openai() first.")
+def rag_qa(query, file_indices, k=10):
+    logger.info(f"执行 RAG 问答: {query}")
     
-    keywords = extract_keywords(query)
-    if relevant_docs is None:
-        relevant_docs = search_documents(keywords, file_indices)
-    
-    if not relevant_docs:
-        return "没有找到相关文档。请尝试使用不同的关键词。", [], ""
-
-    all_chunks = []
-    chunk_to_file = {}
-    combined_index = faiss.IndexFlatL2(384)
-    
-    offset = 0
-    for file_name in relevant_docs:
-        if file_name in file_indices:
-            chunks, index = file_indices[file_name]
-            all_chunks.extend(chunks)
-            for i in range(len(chunks)):
-                chunk_to_file[offset + i] = file_name
-            combined_index.add(index.reconstruct_n(0, index.ntotal))
-            offset += len(chunks)
-
-    if not all_chunks:
-        return "没有找到相关信息。请确保已上传文档。", [], ""
-
+    # 向量化查询
     query_vector = model.encode([query])
-    D, I = combined_index.search(query_vector, k=3)
-    context = []
-    context_with_sources = []
-    for i in I[0]:
-        if 0 <= i < len(all_chunks):  # 确保索引在有效范围内
-            chunk = all_chunks[i]
-            context.append(chunk)
-            file_name = chunk_to_file.get(i, "未知文件")
-            context_with_sources.append((file_name, chunk))
-
-    context_text = "\n".join(context)
     
-    # 确保总token数不超过4096
-    max_context_tokens = 3000  # 为系统消息、查询和其他内容预留更多空间
-    while num_tokens_from_string(context_text) > max_context_tokens:
-        context_text = context_text[:int(len(context_text)*0.9)]  # 每次减少10%的内容
+    # 在所有文档中搜索最相关的文本块
+    all_results = []
+    for file_name, (chunks, index, patient_name) in file_indices.items():
+        D, I = index.search(query_vector, k)
+        for i, (dist, idx) in enumerate(zip(D[0], I[0])):
+            if idx != -1:
+                all_results.append({
+                    "text": chunks[idx],
+                    "distance": dist,
+                    "file_name": file_name,
+                    "patient_name": patient_name
+                })
     
-    if not context_text:
-        return "没有找到相关信息。", [], ""
+    # 按相似度排序并选择前k个结果
+    all_results.sort(key=lambda x: x["distance"])
+    top_results = all_results[:k]
+    
+    # 构建提示
+    context = "\n\n".join([f"文件: {r['file_name']}\n患者: {r['patient_name']}\n内容: {r['text']}" for r in top_results])
+    
+    prompt = f"""基于以下信息回答问题。如果信息不足以回答问题，请如实说明。
 
+问题：{query}
+
+相关信息：
+{context}
+
+请提供详细的回答，并在回答后附上最相关的原文摘录，以"相关原文："为前缀。确保回答中提到的患者信息与上下文中的患者信息一致。
+"""
+
+    # 发送给大模型
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "你是一位有帮助的助手。请根据给定的上下文回答问题。始终使用中文回答，无论问题是什么语言。在回答之后，请务必提供一段最相关的原文摘录，以'相关原文：'为前缀。"},
-            {"role": "user", "content": f"上下文: {context_text}\n\n问题: {query}\n\n请提供你的回答然后在回答后面附上相关的文摘录，以'相关原文：'为前缀。"}
-        ]
+            {"role": "system", "content": "你是一个医疗助手，根据给定的病历信息回答问题。请确保回答准确、相关，并引用原文。"},
+            {"role": "user", "content": prompt}
+        ],
+        max_tokens=500
     )
-    answer = response.choices[0].message.content
     
-    # 更式
-    if "相关原文" in answer:
-        answer_parts = answer.split("相关原文：", 1)
-        main_answer = answer_parts[0].strip()
-        relevant_excerpt = answer_parts[1].strip()
+    answer = response.choices[0].message.content.strip()
+    
+    # 解析回答和相关原文
+    if "相关原文：" in answer:
+        main_answer, relevant_excerpt = answer.split("相关原文：", 1)
     else:
-        main_answer = answer.strip()
-        relevant_excerpt = ""
+        main_answer, relevant_excerpt = answer, ""
     
-    # 如果AI没有提供相关原文，我们从上下文中选择一个
-    if not relevant_excerpt and context:
-        relevant_excerpt = context[0][:200] + "..."  # 使用第一个上下文的前200个字符
-    
-    # 找出包含相关原文的文件
-    relevant_sources = []
-    if relevant_excerpt:
-        for file_name, chunk in context_with_sources:
-            if relevant_excerpt in chunk:
-                relevant_sources.append((file_name, chunk))
-                break  # 只添一个匹配的文件
-    if not relevant_sources and context_with_sources:  # 如果没有找到精确匹配，使用第一个上下文源
-        relevant_sources.append(context_with_sources[0])
-
-    return main_answer, relevant_sources, relevant_excerpt
+    return main_answer.strip(), top_results, relevant_excerpt.strip()
 
 # 保存索引和chunks
-def save_index(file_name, chunks, index):
+def save_index(file_name, chunks, index, patient_name):
     if not os.path.exists('indices'):
         os.makedirs('indices')
     with open(f'indices/{file_name}.pkl', 'wb') as f:
-        pickle.dump((chunks, index), f)
+        pickle.dump((chunks, index, patient_name), f)
     # 更新文件列表
     file_list_path = 'indices/file_list.txt'
     if os.path.exists(file_list_path):
@@ -276,8 +261,8 @@ def load_all_indices():
             file_path = f'indices/{file_name}.pkl'
             if os.path.exists(file_path):
                 with open(file_path, 'rb') as f:
-                    chunks, index = pickle.load(f)
-                file_indices[file_name] = (chunks, index)
+                    chunks, index, patient_name = pickle.load(f)
+                file_indices[file_name] = (chunks, index, patient_name)
     return file_indices
 
 def delete_index(file_name):
@@ -298,7 +283,7 @@ def process_data(content, file_name):
 
     # 改进的提示词，针对电子病历
     prompt = f"""
-    请仔细分析以下电子病历，并提取所有重要信息。特别注意以下几点：
+    请仔细分析电子病历，并提取所有重要信息。特别注意以下几点：
 
     1. 首先识别并提取患者的姓名。这是最重要的信息，所有其他信息都应与患者姓名关联。
     2. 提取关键的患者信息，包括但不限于：
@@ -318,13 +303,13 @@ def process_data(content, file_name):
        - 辅助检查结果（如血常规、影像学检查等）
        - 诊疗经过
        - 用药情况
-       - 手术信息（如果有）
+       - 手术信息（如果有
     5. 识别任何并发症、特殊情况或注意事项。
     6. 提取出院诊断、出院医嘱等出院相关信息。
 
     对于每个提取的实体或信息，请建立与患者姓名的直接关系。如果找不到明确的关系类型，请使用"相关"作为默认关系。
 
-    请以JSON格式输出��式如下：
+    请以JSON格式输出式如下：
     {{
         "patient_name": "患者姓名",
         "entities": [
@@ -387,7 +372,7 @@ def process_data(content, file_name):
 
     except json.JSONDecodeError as e:
         logger.error(f"无法解析OpenAI返回的JSON: {str(e)}")
-        # 使用正则表达式提取实体和关系
+        # 使用正则表达式提取实体和关
         patient_name = re.search(r'"patient_name":\s*"([^"]+)"', result)
         patient_name = patient_name.group(1) if patient_name else "未知患者"
         entities = [{"name": e, "category": "未分类"} for e in re.findall(r'"name":\s*"([^"]+)"', result)]
@@ -532,7 +517,7 @@ def hybrid_search(query):
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "你是一个医疗助手，根据给定的实体信息和关系准确回答问题。请直接使用提供的信息，不要添加未给出的假设。如果信息不足，请如实说明。"},
+                {"role": "system", "content": "你是一个医疗助手，根据给定的实体信息和关系准确回答问题。请直接使用提供的信息，不要添加未给出的假设。如果信息不足，请如说明。"},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=150
@@ -550,7 +535,7 @@ def hybrid_search(query):
         logger.info(f"搜索结果: {answer}")
         return answer, list(entities), relations
     except Exception as e:
-        logger.error(f"混合搜索过程中发生��误: {str(e)}", exc_info=True)
+        logger.error(f"混合搜索过程中发生误: {str(e)}", exc_info=True)
         return f"抱歉，在处理您的问题时发生了错误: {str(e)}", [], []
 
 # 文件末尾添加以下函数
@@ -638,17 +623,17 @@ def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, 
     5. 如果存在不确定性，请说明原因并给出建议
 
     注意：
-    - 图数据库的信息通常更精确，请优先考虑图数据库中的关系信息
-    - 全文检索结果可能提供更广泛的上下文，请充分利用这些信息
-    - 向量数据库的结果可能提供额外的相关信息
+    - 图数据库的信息通常更精确，请优先考虑图数据库中的关系信息。
+    - 全文检索结果可能提供更广泛的上下文，请充分利用这些信息。
+    - 向量数据库的结果可能提供外的相关信
 
-    请确保回答全面且准确，不要忽视任何重要信息，特别是图数据库中的关系信息。
+    请确保回答全面且准确，不忽视任何重信息，特别是图数据库中的关系信息。
     """
     
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "你是个智能助手，能够综合分析来自不同数据源的信息，并提供准确、全面的回答。你需要仔细考虑所有提供的信息，特别是要注意图数据库中的关系信息。"},
+            {"role": "system", "content": "你是个智能助手，能够综合分析来自不同数据源的信息，并提供准确全面的回答。你需要仔细考虑所有提供的信息，特别是要注意图数据库中的关系信息。"},
             {"role": "user", "content": prompt}
         ],
         max_tokens=800
@@ -657,9 +642,9 @@ def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, 
     return response.choices[0].message.content.strip()
 
 def vector_search(query, k=5):
-    global faiss_index
+    global faiss_index, faiss_id_to_text
     if faiss_index is None:
-        logger.error("FAISS 索引未初始")
+        logger.error("FAISS 索引未初始化")
         return []
     
     query_vector = model.encode([query])
@@ -668,7 +653,13 @@ def vector_search(query, k=5):
     results = []
     for i, d in zip(I[0], D[0]):
         if i != -1 and i in faiss_id_to_text:
-            results.append({"text": faiss_id_to_text[i], "distance": float(d)})
+            text = faiss_id_to_text[i]
+            patient_name = text.split('。')[0].split('：')[1]  # 从文本块中提取患者姓名
+            results.append({
+                "text": text,
+                "distance": float(d),
+                "patient_name": patient_name
+            })
     
     return results
 
@@ -884,7 +875,7 @@ def delete_graph_data(file_name):
 def delete_vector_data(file_name):
     global faiss_index, faiss_id_to_text, faiss_id_counter
     if file_name in st.session_state.file_indices:
-        chunks, _ = st.session_state.file_indices[file_name]
+        chunks, _, _ = st.session_state.file_indices[file_name]  # 解包三个元素，忽略 index 和 patient_name
         # 从 faiss_id_to_text 中删除相关条目
         faiss_id_to_text = {k: v for k, v in faiss_id_to_text.items() if v not in chunks}
         # 重建 FAISS 索引
