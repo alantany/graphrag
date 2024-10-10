@@ -126,7 +126,7 @@ def main():
     try:
         faiss_index = initialize_faiss()
         if faiss_index is None:
-            st.error("FAISS 索引初始化失败。请检查 initialize_faiss() 函数。")
+            st.error("FAISS 索引初始化失败。请查 initialize_faiss() 数。")
             return
     except Exception as e:
         st.error(f"FAISS 索引初始化时发生错误: {str(e)}")
@@ -220,10 +220,10 @@ def main():
                             delete_graph_data(uploaded_file.name)
                             # 添加新数据
                             result = process_data(content, uploaded_file.name)
-                        st.success(f"文档 {uploaded_file.name} 已成功加载到图数据库！")
+                        st.success(f"文�� {uploaded_file.name} 已成功加载到图数据库！")
                         st.write(f"处理了 {len(result['entities'])} 个实体和 {len(result['relations'])} 个关系")
                         
-                        # 显示处理结果的详细信息
+                        # 示处理结果的详细信息
                         with st.expander("查看详细处理结果"):
                             st.subheader("实体:")
                             for entity in result['entities']:
@@ -283,7 +283,7 @@ def main():
                                         st.info(f"索引中的文档内容长度: {len(results[0]['content'])}")
                                         st.info(f"索引中的文档内容前200字符: {results[0]['content'][:200]}")
                                     else:
-                                        st.warning(f"无法在索引中找到文档 {uploaded_file.name}")
+                                        st.warning(f"无法在索引找到文档 {uploaded_file.name}")
                             except Exception as e:
                                 st.error(f"创建或验证索时出错: {str(e)}")
                                 st.error(f"错误类型: {type(e).__name__}")
@@ -346,7 +346,7 @@ def main():
                     for source in sources:
                         st.write(f"- 文件: {source['file_name']}, 患者: {source['patient_name']}")
                 if excerpt:
-                    st.write("相关原文：")
+                    st.write("相原文：")
                     st.write(excerpt)
         
         elif qa_type == "图数据库问答":
@@ -369,7 +369,6 @@ def main():
                     # 全文检索
                     try:
                         fulltext_results = search_fulltext_index(hybrid_query)
-                        st.write(f"全文索引中共有 {len(fulltext_results)} 个相关文档被搜索")
                     except Exception as e:
                         st.error(f"全文检索出错: {str(e)}")
                         fulltext_results = []
@@ -377,28 +376,47 @@ def main():
                     # 图数据库查询
                     graph_answer, graph_entities, graph_relations = hybrid_search(hybrid_query)
                     
-                    # 向量数据库查
+                    # 向量数据库查询
                     vector_answer, sources, excerpt = rag_qa(hybrid_query, st.session_state.file_indices)
                     
-                    # 使用所有结果成最终答案
+                    # 使用所有结果生成最终答案
                     final_answer = generate_final_answer(
                         hybrid_query, 
                         graph_answer, 
                         vector_answer, 
-                        fulltext_results,  # 确保这里传递了 fulltext_results
+                        fulltext_results,  # 确保这里传递的是完整的 fulltext_results
                         excerpt, 
                         graph_entities, 
                         graph_relations
                     )
                     
-                    st.write("最终回答", final_answer)
+                    st.write("最终回答：", final_answer)
+                    
+                    # 图数据库回答
                     st.write("图数据库回答：", graph_answer)
+                    
+                    # 创建并显示关系图谱
+                    G = nx.Graph()
+                    for entity in graph_entities:
+                        G.add_node(entity)
+                    for relation in graph_relations:
+                        G.add_edge(relation['source'], relation['target'], title=relation['relation'])
+                    
+                    net = Network(notebook=True, width="100%", height="500px", bgcolor="#222222", font_color="white")
+                    net.from_nx(G)
+                    net.save_graph("graph.html")
+                    
+                    with open("graph.html", 'r', encoding='utf-8') as f:
+                        html_string = f.read()
+                    st.write("图数据库关系图谱：")
+                    components.html(html_string, height=600)
+                    
+                    # 向量数据库回答
                     st.write("向量数据库回答：", vector_answer)
-                    st.write(f"全文检索结果数量：{len(fulltext_results)}")
-
-                    # 显示全文检结果
+                    
+                    # 显示全文检索结果
                     if fulltext_results:
-                        st.write("全文检索结果（3个）：")
+                        st.write("全文检索结果（前3个）：")
                         for result in fulltext_results[:3]:
                             st.write(f"- 文档: {result['title']}, 相关度: {result['score']:.2f}")
                             highlights = result['highlights']
@@ -550,7 +568,7 @@ def main():
                             all_docs = list(searcher.all_stored_fields())
                             st.write(f"全文索引中共有 {len(all_docs)} 个文档")
                             for doc in all_docs:
-                                st.write(f"- 文���: {doc['title']}")
+                                st.write(f"- 文: {doc['title']}")
                     except Exception as e:
                         st.error(f"获取全文索引信息时出错: {str(e)}")
 

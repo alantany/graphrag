@@ -598,7 +598,7 @@ def get_neo4j_driver():
 
 def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, excerpt, graph_entities, graph_relations):
     prompt = f"""
-    基于以下信息，请回答问题并提供详细的推理过程和证据来源：
+    基于以下信息，请回答问题并提供详细的推理过程：
 
     问题：{query}
 
@@ -609,31 +609,31 @@ def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, 
     向量数据库回答：{vector_answer}
 
     全文检索结果：
-    {' '.join([f"文档: {result['title']}, 内容: {result['content']}" for result in fulltext_results[:5]])}
+    {' '.join([f"文档: {result['title']}, 相关度: {result['score']:.2f}, 匹配内容: {result['highlights']}" for result in fulltext_results[:5]])}
 
     全文检索匹配文档数量：{len(fulltext_results)}
 
     相关原文：{excerpt}
 
     请提供一个综合的回答，包括：
-    1. 直接回答问题，综合考虑所有数据源的信息，特别是图数据库中的关系信息
-    2. 详细的推理过程，解释如何得出结论
-    3. 使用的证据及其来源（包括图数据库、向量数据库和全文检索）
-    4. 如果不同数据源之间存在矛盾，请指出并解释可能的原因
-    5. 如果存在不确定性，请说明原因并给出建议
+    1. 直接回答问题，综合考虑所有数据源的信息，特别是图数据库中的关系信息和全文检索的结果
+    2. 明确指出相关患者的姓名
+    3. 详细的推理过程，解释如何得出结论
+    4. 使用的证据及其来源（包括图数据库、向量数据库和全文检索）
 
     注意：
-    - 图数据库的信息通常更精确，请优先考虑图数据库中的关系信息。
-    - 全文检索结果可能提供更广泛的上下文，请充分利用这些信息。
-    - 向量数据库的结果可能提供外的相关信
+    - 图数据库的信息通常更精确，请优先考虑图数据库中的关系信息
+    - 全文检索结果提供了直接的文本匹配，请充分利用这些信息，特别是在识别症状和患者时
+    - 向量数据库的结果可能提供额外的相关信息
+    - 请确保在回答中明确提到相关患者的姓名，并直接引用全文检索的结果
 
-    请确保回答全面且准确，不忽视任何重信息，特别是图数据库中的关系信息。
+    请确保回答全面且准确，不要忽视任何重要信息，特别是全文检索中直接匹配的内容。
     """
     
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "你是个智能助手，能够综合分析来自不同数据源的信息，并提供准确全面的回答。你需要仔细考虑所有提供的信息，特别是要注意图数据库中的关系信息。"},
+            {"role": "system", "content": "你是个智能助手，能够综合分析来自不同数据源的信息，并提供准确、全面的回答。你需要仔细考虑所有提供的信息，特别是要注意全文检索的直接匹配结果和图数据库中的关系信息。"},
             {"role": "user", "content": prompt}
         ],
         max_tokens=800
@@ -787,33 +787,25 @@ def search_fulltext_index(query):
 
     ix = open_dir("fulltext_index")
     with ix.searcher() as searcher:
-        # 使用 OpenAI API 提取关键词
         keywords = extract_core_keywords(query)
         logger.info(f"提取的核心关键词: {keywords}")
 
-        # 构建查询
         query_parser = QueryParser("content", ix.schema, group=OrGroup.factory(0.9))
         query_terms = []
         for keyword in keywords:
             query_terms.append(Term("content", keyword))
         
-        # 使用 Or 查询组合所有关键词
         final_query = query_parser.parse(" OR ".join(keywords))
         logger.info(f"构建的查询: {final_query}")
 
         results = searcher.search(final_query, limit=None)
         logger.info(f"搜索结果数量: {len(results)}")
         
-        # 添加更详细的日志
-        for hit in results:
-            logger.info(f"匹配文档: {hit['title']}, 得分: {hit.score}")
-            try:
-                matched_terms = hit.matched_terms()
-                logger.info(f"匹配字段: {matched_terms}")
-            except NoTermsException:
-                logger.warning(f"文档 {hit['title']} 没有匹配的词条")
-        
-        return [{"title": r["title"], "score": r.score, "highlights": r.highlights("content", top=3), "content": r.get("content", "")[:200]} for r in results]
+        return [{"title": r["title"], 
+                 "score": r.score, 
+                 "highlights": r.highlights("content", top=5),  # 增加返回的高亮片段数量
+                 "content": r.get("content", "")[:500]  # 增加返回的内容长度
+                } for r in results]
 
 def extract_core_keywords(query):
     response = client.chat.completions.create(
@@ -826,7 +818,7 @@ def extract_core_keywords(query):
             注意：
             1. 常见词"患者"、"病人"、"医生"、"医院"等不应被视为核心关键词，除非它们是问题的主要焦点。
             2. 优先选择专业医学术语、症状描述或特定的疾病名称。
-            3. 关键词可以是问题中明确出现的词，也可以是根据问题内容推断出的相关医学术语。
+            3. 关键词可以是题中明确出现的词，也可以是根据问题内容推断出的相关医学术语。
             4. 如果问题中没有明确的医学术语，可以选择问题中最具体、最相关的词语。
 
             问题：{query}
@@ -842,7 +834,7 @@ def extract_core_keywords(query):
 medical_synonyms = {
     "脑梗死": ["脑梗塞", "缺血性脑卒中"],
     "白细胞": ["白血球", "WBC"],
-    # 添加更多同义词...
+    # 添更多同义词...
 }
 
 def expand_query(query):
