@@ -4,7 +4,8 @@
 
 import streamlit as st
 from openai import OpenAI
-from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer, AutoModel
+import torch
 import multiprocessing
 import PyPDF2
 import docx
@@ -91,6 +92,30 @@ def decompose_query(query):
         ]
     )
     return response.choices[0].message.content.strip().split("\n")
+
+def mean_pooling(model_output, attention_mask):
+    token_embeddings = model_output[0]
+    input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+    return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+
+class CustomSentenceTransformer:
+    def __init__(self, model_name):
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModel.from_pretrained(model_name)
+    
+    def encode(self, sentences, batch_size=8):
+        all_embeddings = []
+        for i in range(0, len(sentences), batch_size):
+            batch = sentences[i:i+batch_size]
+            encoded_input = self.tokenizer(batch, padding=True, truncation=True, return_tensors='pt')
+            with torch.no_grad():
+                model_output = self.model(**encoded_input)
+            sentence_embeddings = mean_pooling(model_output, encoded_input['attention_mask'])
+            all_embeddings.extend(sentence_embeddings)
+        return torch.stack(all_embeddings).numpy()
+
+# 使用自定义的 SentenceTransformer
+SentenceTransformer = CustomSentenceTransformer
 
 def main():
     # 添加标题和开发者信息
@@ -199,7 +224,7 @@ def main():
         max_tokens = 4096
 
         # 多文件上传
-        uploaded_files = st.file_uploader("上传文档", type=["pdf", "docx", "txt"], accept_multiple_files=True)
+        uploaded_files = st.file_uploader("传文档", type=["pdf", "docx", "txt"], accept_multiple_files=True)
 
         if uploaded_files:
             for uploaded_file in uploaded_files:
@@ -287,7 +312,7 @@ def main():
                                     if results:
                                         st.success(f"成功验证文档 {uploaded_file.name} 已被索引")
                                         st.info(f"索引中的文档内容长度: {len(results[0]['content'])}")
-                                        st.info(f"索引中的文档内��前200字符: {results[0]['content'][:200]}")
+                                        st.info(f"索引中的文档内前200字符: {results[0]['content'][:200]}")
                                     else:
                                         st.warning(f"无法在索引找到文档 {uploaded_file.name}")
                             except Exception as e:
@@ -311,7 +336,7 @@ def main():
                             # 删除图数据库中的数据
                             delete_graph_data(file_name)
                             
-                            # 删除全文索引中的数据
+                            # 删除全索引中的数据
                             delete_fulltext_index(file_name)
                             
                             # 删除本地索引文件
@@ -423,7 +448,7 @@ def main():
                             context = "\n\n".join([f"文档: {result['title']}\n内容: {result['content']}" for result in fulltext_results[:3]])
                             
                             # 使用 OpenAI API 生成总结答案
-                            prompt = f"""基于以下从全文索引中检索到的信息，请回答问题并提供简洁明了的总结：
+                            prompt = f"""基于以下从全文索引中检索到的信息，��回答问题并提供简��明了的总结：
 
 问题：{fulltext_query}
 
@@ -432,7 +457,7 @@ def main():
 
 请提供一个综合的回答，包括：
 1. 直接回答问题
-2. 对检索到的信息进行简要总结
+2. 对检索到的信息进行简总结
 3. 如果信息不足以完全回答问题，请说明并提供可能的下一步建议
 
 回答："""
@@ -507,7 +532,7 @@ def main():
                     # 图数据库回答
                     st.write("图数据库回答：", graph_answer)
                     
-                    # 创建并显示关系图谱
+                    # 创并显示关系图谱
                     G = nx.Graph()
                     for entity in graph_entities:
                         G.add_node(entity)
@@ -645,7 +670,7 @@ def main():
                         else:
                             st.warning("没有找到相关文档")
                     except Exception as e:
-                        st.error(f"搜索全文索引时出错: {str(e)}")
+                        st.error(f"搜索全文索��时出错: {str(e)}")
 
         else:  # Neo4j 命令执行
             st.subheader("Neo4j 命令执行")
@@ -806,7 +831,7 @@ def main():
                     clear_vector_data()
                     st.session_state.file_indices = {}
 
-                    # 重新处理所有文档
+                    # 重新处理���有文档
                     for file_name in os.listdir('indices'):
                         if file_name.endswith('.pkl'):
                             file_path = os.path.join('indices', file_name)
