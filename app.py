@@ -226,7 +226,7 @@ def main():
                             delete_graph_data(uploaded_file.name)
                             # 添加新数据
                             result = process_data(content, uploaded_file.name)
-                        st.success(f"文 {uploaded_file.name} 已成功加载到图数���库！")
+                        st.success(f"文 {uploaded_file.name} 已成功加载到图数据库！")
                         st.write(f"处理了 {len(result['entities'])} 个实体和 {len(result['relations'])} 个关系")
                         
                         # 示处理结果的详细信息
@@ -287,7 +287,7 @@ def main():
                                     if results:
                                         st.success(f"成功验证文档 {uploaded_file.name} 已被索引")
                                         st.info(f"索引中的文档内容长度: {len(results[0]['content'])}")
-                                        st.info(f"索引中的文档内容前200字符: {results[0]['content'][:200]}")
+                                        st.info(f"索引中的文档内��前200字符: {results[0]['content'][:200]}")
                                     else:
                                         st.warning(f"无法在索引找到文档 {uploaded_file.name}")
                             except Exception as e:
@@ -668,163 +668,160 @@ def main():
     with tab4:
         st.header("数据管理")
 
-        col1, col2 = st.columns(2)
+        # 全文索引信息
+        if st.button("全文索引信息"):
+            with st.spinner("正在获取全文索引信息..."):
+                try:
+                    ix = open_dir("fulltext_index")
+                    with ix.searcher() as searcher:
+                        all_docs = list(searcher.all_stored_fields())
+                        st.write(f"全文索引中共有 {len(all_docs)} 个文档")
+                        for doc in all_docs:
+                            st.write(f"- 文件: {doc['title']}")
+                except Exception as e:
+                    st.error(f"获取全文索引信息时出错: {str(e)}")
 
-        with col1:
-            # 全文索引信息
-            if st.button("全文索引信息"):
-                with st.spinner("正在获取全文索引信息..."):
-                    try:
-                        ix = open_dir("fulltext_index")
-                        with ix.searcher() as searcher:
-                            all_docs = list(searcher.all_stored_fields())
-                            st.write(f"全文索引中共有 {len(all_docs)} 个文档")
-                            for doc in all_docs:
-                                st.write(f"- 文: {doc['title']}")
-                    except Exception as e:
-                        st.error(f"获取全文索引信息时出错: {str(e)}")
+        # 图数据库信息
+        if st.button("图数据库信息"):
+            with st.spinner("正在获取图数据库信息..."):
+                try:
+                    driver = get_neo4j_driver()
+                    with driver.session() as session:
+                        # 获取与上传文档相关的节点和关系
+                        result = session.run("""
+                        MATCH (n:Entity)
+                        WHERE n.source IS NOT NULL
+                        OPTIONAL MATCH (n)-[r:RELATED_TO]->(m:Entity)
+                        WHERE m.source IS NOT NULL
+                        RETURN n.name AS source, r.type AS relation, m.name AS target, n.source AS source_doc
+                        """)
 
-            # 图数据库信息
-            if st.button("图数据库信息"):
-                with st.spinner("正在获取图数据库信息..."):
-                    try:
-                        driver = get_neo4j_driver()
-                        with driver.session() as session:
-                            # 获取与上传文档相关的节点和关系
-                            result = session.run("""
-                            MATCH (n:Entity)
-                            WHERE n.source IS NOT NULL
-                            OPTIONAL MATCH (n)-[r:RELATED_TO]->(m:Entity)
-                            WHERE m.source IS NOT NULL
-                            RETURN n.name AS source, r.type AS relation, m.name AS target, n.source AS source_doc
-                            """)
+                        # 创建一个 NetworkX 图
+                        G = nx.Graph()
+                        for record in result:
+                            source = record['source']
+                            target = record['target']
+                            relation = record['relation']
+                            source_doc = record['source_doc']
 
-                            # 创建一个 NetworkX 图
-                            G = nx.Graph()
-                            for record in result:
-                                source = record['source']
-                                target = record['target']
-                                relation = record['relation']
-                                source_doc = record['source_doc']
+                            # 添加节点
+                            if source not in G:
+                                G.add_node(source, title=f"来源: {source_doc}")
+                            if target and target not in G:
+                                G.add_node(target, title=f"来源: {source_doc}")
 
-                                # 添加节点
-                                if source not in G:
-                                    G.add_node(source, title=f"来源: {source_doc}")
-                                if target and target not in G:
-                                    G.add_node(target, title=f"来源: {source_doc}")
+                            # 添加边
+                            if target:
+                                G.add_edge(source, target, title=relation)
 
-                                # 添加边
-                                if target:
-                                    G.add_edge(source, target, title=relation)
+                        # 创建 Pyvis 网络
+                        net = Network(notebook=True, width="100%", height="600px", bgcolor="#222222", font_color="white")
+                        net.from_nx(G)
+                        net.toggle_physics(True)
+                        net.show_buttons(filter_=['physics'])
 
-                            # 创建 Pyvis 网络
-                            net = Network(notebook=True, width="100%", height="600px", bgcolor="#222222", font_color="white")
-                            net.from_nx(G)
-                            net.toggle_physics(True)
-                            net.show_buttons(filter_=['physics'])
+                        # 保存并显示图
+                        net.save_graph("graph.html")
+                        with open("graph.html", "r", encoding="utf-8") as f:
+                            graph_html = f.read()
+                        st.components.v1.html(graph_html, width=None, height=600)
 
-                            # 保存并显示图
-                            net.save_graph("graph.html")
-                            with open("graph.html", "r", encoding="utf-8") as f:
-                                graph_html = f.read()
-                            st.components.v1.html(graph_html, width=700, height=600)
+                        # 显示统计信息
+                        st.write(f"图数据库中与上传文档相关的数据:")
+                        st.write(f"- 节点数量: {G.number_of_nodes()}")
+                        st.write(f"- 关系数量: {G.number_of_edges()}")
 
-                            # 显示统计信息
-                            st.write(f"图数据库中与上传文档相关的数据:")
-                            st.write(f"- 节点数量: {G.number_of_nodes()}")
-                            st.write(f"- 关系数量: {G.number_of_edges()}")
+                except Exception as e:
+                    st.error(f"获取图数据库信息时出错: {str(e)}")
 
-                    except Exception as e:
-                        st.error(f"获取图数据库信息时出错: {str(e)}")
+        # 向量数据信息
+        if st.button("向量数据信息"):
+            with st.spinner("正在获取向量数据信息..."):
+                try:
+                    total_vectors = faiss_index.ntotal if faiss_index is not None else 0
+                    st.write(f"向量数据库中共有 {total_vectors} 个向量")
+                    st.write(f"向量维度: {faiss_index.d if faiss_index is not None else 'N/A'}")
+                    st.write(f"已索引的文档数量: {len(st.session_state.file_indices)}")
+                    
+                    st.write("\n文件详细信息:")
+                    for file_name, (chunks, index, patient_name) in st.session_state.file_indices.items():
+                        st.write(f"- 文件: {file_name}")
+                        st.write(f"  患者: {patient_name}")
+                        st.write(f"  向量数量: {len(chunks)}")
+                        st.write(f"  文本块数量: {len(chunks)}")
+                    
+                    if total_vectors != sum(len(chunks) for chunks, _, _ in st.session_state.file_indices.values()):
+                        st.warning("注意：向量总数与文件索引中的向量数量不匹配，可能存在孤立向量。")
+                    
+                    if total_vectors == 0 and len(st.session_state.file_indices) == 0:
+                        st.info("向量数据库当前为空。")
+                except Exception as e:
+                    st.error(f"获取向量数据信息时出错: {str(e)}")
 
-            # 向量数据信息
-            if st.button("向量数据信息"):
-                with st.spinner("正在获取向量数据信息..."):
-                    try:
-                        total_vectors = faiss_index.ntotal if faiss_index is not None else 0
-                        st.write(f"向量数据库中共有 {total_vectors} 个向量")
-                        st.write(f"向量维度: {faiss_index.d if faiss_index is not None else 'N/A'}")
-                        st.write(f"已索引的文档数量: {len(st.session_state.file_indices)}")
-                        
-                        st.write("\n文件详细信息:")
-                        for file_name, (chunks, index, patient_name) in st.session_state.file_indices.items():
-                            st.write(f"- 文件: {file_name}")
-                            st.write(f"  患者: {patient_name}")
-                            st.write(f"  向量数量: {len(chunks)}")
-                            st.write(f"  文本块数量: {len(chunks)}")
-                        
-                        if total_vectors != sum(len(chunks) for chunks, _, _ in st.session_state.file_indices.values()):
-                            st.warning("注意：向量总数与文件索引中的向量数量不匹配，可能存在孤立向量。")
-                        
-                        if total_vectors == 0 and len(st.session_state.file_indices) == 0:
-                            st.info("向量数据库当前为空。")
-                    except Exception as e:
-                        st.error(f"获取向量数据信息时出错: {str(e)}")
+        # 全文索引删除
+        if st.button("全文索引删除"):
+            with st.spinner("正在删除全文索引..."):
+                try:
+                    ix = open_dir("fulltext_index")
+                    with ix.searcher() as searcher:
+                        all_docs = list(searcher.all_stored_fields())
+                        for doc in all_docs:
+                            delete_fulltext_index(doc['title'])
+                    st.success("全文索引已成功删除")
+                except Exception as e:
+                    st.error(f"删除全文索引时出错: {str(e)}")
 
-        with col2:
-            # 全文索引删除
-            if st.button("全文索引删除"):
-                with st.spinner("正在删除全文索引..."):
-                    try:
-                        ix = open_dir("fulltext_index")
-                        with ix.searcher() as searcher:
-                            all_docs = list(searcher.all_stored_fields())
-                            for doc in all_docs:
-                                delete_fulltext_index(doc['title'])
-                        st.success("全文索引已成功删除")
-                    except Exception as e:
-                        st.error(f"删除全文索引时出错: {str(e)}")
+        # 图数据删除
+        if st.button("图数据删除"):
+            with st.spinner("正在删除图数据..."):
+                try:
+                    driver = get_neo4j_driver()
+                    with driver.session() as session:
+                        # 只删除与上传文档相关的节点和关系
+                        session.run("""
+                        MATCH (n:Entity)
+                        WHERE n.source IS NOT NULL
+                        DETACH DELETE n
+                        """)
+                    st.success("与上传文档相关的图数据已成功删除")
+                except Exception as e:
+                    st.error(f"删除图数据时出错: {str(e)}")
 
-            # 图数据删除
-            if st.button("图数据删除"):
-                with st.spinner("正在删除图数据..."):
-                    try:
-                        driver = get_neo4j_driver()
-                        with driver.session() as session:
-                            # 只删除与上传文档相关的节点和关系
-                            session.run("""
-                            MATCH (n:Entity)
-                            WHERE n.source IS NOT NULL
-                            DETACH DELETE n
-                            """)
-                        st.success("与上传文档相关的图数据已成功删除")
-                    except Exception as e:
-                        st.error(f"删除图数据时出错: {str(e)}")
+        # 向量数据删除
+        if st.button("向量数据删除"):
+            with st.spinner("正在删除向量数据..."):
+                try:
+                    clear_vector_data()
+                    st.session_state.file_indices = {}  # 清空文件索引
+                    st.success("向量数据已成功删除")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"删除向量数据时出错: {str(e)}")
 
-            # 向量数据删除
-            if st.button("向量数据删除"):
-                with st.spinner("正在删除向量数据..."):
-                    try:
-                        clear_vector_data()
-                        st.session_state.file_indices = {}  # 清空文件索引
-                        st.success("向量数据已成功删除")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"删除向量数据时出错: {str(e)}")
+        # 重新处理所有文档
+        if st.button("重新处理所有文档"):
+            with st.spinner("正在重新处理所有文档..."):
+                try:
+                    # 清除现有的向量数据
+                    clear_vector_data()
+                    st.session_state.file_indices = {}
 
-            if st.button("重新处理所有文档"):
-                with st.spinner("正在重新处理所有文档..."):
-                    try:
-                        # 清除现有的向量数据
-                        clear_vector_data()
-                        st.session_state.file_indices = {}
+                    # 重新处理所有文档
+                    for file_name in os.listdir('indices'):
+                        if file_name.endswith('.pkl'):
+                            file_path = os.path.join('indices', file_name)
+                            with open(file_path, 'rb') as f:
+                                content = pickle.load(f)[0]  # 假设内容是第一个元素
+                            
+                            # 重新向量化文档
+                            chunks, index, patient_name = vectorize_document(content, file_name[:-4], max_tokens)
+                            st.session_state.file_indices[file_name[:-4]] = (chunks, index, patient_name)
+                            save_index(file_name[:-4], chunks, index, patient_name)
 
-                        # 重新处理所有文档
-                        for file_name in os.listdir('indices'):
-                            if file_name.endswith('.pkl'):
-                                file_path = os.path.join('indices', file_name)
-                                with open(file_path, 'rb') as f:
-                                    content = pickle.load(f)[0]  # 假设内容是第一个元素
-                                
-                                # 重新向量化文档
-                                chunks, index, patient_name = vectorize_document(content, file_name[:-4], max_tokens)
-                                st.session_state.file_indices[file_name[:-4]] = (chunks, index, patient_name)
-                                save_index(file_name[:-4], chunks, index, patient_name)
-
-                        st.success("所有文档已重新处理完成")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"重新处理文档时出错: {str(e)}")
+                    st.success("所有文档已重新处理完成")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"重新处理文档时出错: {str(e)}")
 
 if __name__ == "__main__":
     main()
