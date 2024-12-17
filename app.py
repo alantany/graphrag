@@ -65,8 +65,7 @@ st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # 初始化 OpenAI 客户端
 initialize_openai(
-    #api_key="sk-1pUmQlsIkgla3CuvKTgCrzDZ3r0pBxO608YJvIHCN18lvOrn", free版
-    api_key="sk-iM6Jc42voEnIOPSKJfFY0ri7chsz4D13sozKyqg403Euwv5e", #收费版
+    api_key="sk-1pUmQlsIkgla3CuvKTgCrzDZ3r0pBxO608YJvIHCN18lvOrn", #free版
     base_url="https://api.chatanywhere.tech/v1"
 )
 
