@@ -29,9 +29,9 @@ from whoosh.qparser import QueryParser
 from whoosh.searching import NoTermsException
 
 # Neo4j连接配置
-AURA_URI = "neo4j+s://b76a61f2.databases.neo4j.io:7687"
+AURA_URI = "neo4j+s://8316be4e.databases.neo4j.io:7687"
 AURA_USERNAME = "neo4j"
-AURA_PASSWORD = "JkVujA4SZWdifvfvj5m_gwdUgHsuTxQjbJQooUl1C14"
+AURA_PASSWORD = "Sb7drSqJT8v6oXX3IexRRFFvI-gcfuV8qmfKMl8_jV0"
 
 LOCAL_URI = "bolt://localhost:7687"
 LOCAL_USERNAME = "test"
