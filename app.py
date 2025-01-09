@@ -39,7 +39,7 @@ from data_processor import faiss_id_to_text, faiss_id_counter, faiss_index
 
 # 初始化 OpenAI 客户端
 client = OpenAI(
-    api_key="sk-iM6Jc42voEnIOPSKJfFY0ri7chsz4D13sozKyqg403Euwv5e",  # 使用您的 API 密钥
+    api_key="sk-1pUmQlsIkgla3CuvKTgCrzDZ3r0pBxO608YJvIHCN18lvOrn",  # 使用您的 API 密钥
     base_url="https://api.chatanywhere.tech/v1"
 )
 
