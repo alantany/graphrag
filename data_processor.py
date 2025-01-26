@@ -609,6 +609,7 @@ def get_neo4j_driver():
     return GraphDatabase.driver(
         CURRENT_NEO4J_CONFIG["URI"],
         auth=(CURRENT_NEO4J_CONFIG["USERNAME"], CURRENT_NEO4J_CONFIG["PASSWORD"])
+    )
 
 def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, excerpt, graph_entities, graph_relations):
     prompt = f"""
@@ -963,17 +964,34 @@ def clear_vector_data():
     logger.info("所有向量数据已被清除")
 
 def initialize_neo4j():
-    driver = get_neo4j_driver()
-    with driver.session() as session:
-        # 检查索引是否存在
-        try:
-            session.run("CALL db.indexes() YIELD name WHERE name = 'entityFulltextIndex'")
-        except:
-            # 创建全文索引
-            session.run("""
-            CALL db.index.fulltext.createNodeIndex(
-                'entityFulltextIndex',
-                ['Entity'],
-                ['name', 'content']
-            )
-            """)
+    try:
+        driver = get_neo4j_driver()
+        with driver.session() as session:
+            # 检查索引是否存在
+            try:
+                result = session.run("CALL db.indexes() YIELD name WHERE name = 'entityFulltextIndex'").single()
+                if not result:
+                    # 创建全文索引
+                    session.run("""
+                    CALL db.index.fulltext.createNodeIndex(
+                        'entityFulltextIndex',
+                        ['Entity'],
+                        ['name', 'content']
+                    )
+                    """)
+                    logger.info("成功创建全文索引 'entityFulltextIndex'")
+            except Exception as e:
+                logger.error(f"检查或创建索引时出错: {str(e)}")
+                # 尝试创建索引
+                session.run("""
+                CALL db.index.fulltext.createNodeIndex(
+                    'entityFulltextIndex',
+                    ['Entity'],
+                    ['name', 'content']
+                )
+                """)
+                logger.info("成功创建全文索引 'entityFulltextIndex'")
+        driver.close()
+    except Exception as e:
+        logger.error(f"初始化 Neo4j 时出错: {str(e)}")
+        raise
