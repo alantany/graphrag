@@ -28,6 +28,9 @@ from whoosh.index import create_in, open_dir
 from whoosh.qparser import QueryParser
 from whoosh.searching import NoTermsException
 
+# 在文件开头声明全局变量
+global CURRENT_NEO4J_CONFIG
+
 # Neo4j连接配置
 AURA_URI = "neo4j+s://85c689ad.databases.neo4j.io:7687"
 AURA_USERNAME = "neo4j"
@@ -41,9 +44,9 @@ LOCAL_PASSWORD = "Mikeno01"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# 设置默认配置
+# 初始化默认配置
 CURRENT_NEO4J_CONFIG = {
-    "URI": AURA_URI,  # 默认使用 Aura
+    "URI": AURA_URI,
     "USERNAME": AURA_USERNAME,
     "PASSWORD": AURA_PASSWORD
 }
@@ -974,12 +977,11 @@ def initialize_neo4j():
         if not CURRENT_NEO4J_CONFIG or not all(CURRENT_NEO4J_CONFIG.values()):
             logger.error("Neo4j 配置未正确设置")
             # 使用默认配置
-            global CURRENT_NEO4J_CONFIG
-            CURRENT_NEO4J_CONFIG = {
+            CURRENT_NEO4J_CONFIG.update({
                 "URI": AURA_URI,
                 "USERNAME": AURA_USERNAME,
                 "PASSWORD": AURA_PASSWORD
-            }
+            })
             logger.info("已设置默认 Neo4j 配置")
 
         driver = get_neo4j_driver()

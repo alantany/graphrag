@@ -119,10 +119,19 @@ SentenceTransformer = CustomSentenceTransformer
 def main():
     # 设置 Neo4j 配置
     try:
+        # 在使用 neo4j_option 之前先定义它
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            neo4j_option = st.radio(
+                "选择 Neo4j 连接方式",
+                ("Neo4j Aura", "本地 Neo4j")
+            )
+
+        # 根据选择设置配置
         if neo4j_option == "Neo4j Aura":
-            CURRENT_NEO4J_CONFIG = set_neo4j_config("AURA")
+            set_neo4j_config("AURA")
         else:
-            CURRENT_NEO4J_CONFIG = set_neo4j_config("LOCAL")
+            set_neo4j_config("LOCAL")
         
         # 初始化 Neo4j
         initialize_neo4j()
@@ -188,13 +197,6 @@ def main():
         st.session_state.faiss_id_counter += sum(len(chunks) for chunks, _, _ in st.session_state.file_indices.values())
 
     # Neo4j 配置选择
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        neo4j_option = st.radio(
-            "选择 Neo4j 连接方式",
-            ("Neo4j Aura", "本地 Neo4j")
-        )
-
     with col2:
         if neo4j_option == "Neo4j Aura":
             connection_status = "已选择连接到 Neo4j Aura"
