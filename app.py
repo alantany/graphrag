@@ -117,11 +117,17 @@ class CustomSentenceTransformer:
 SentenceTransformer = CustomSentenceTransformer
 
 def main():
-    # 在主函数开始时初始化Neo4j
+    # 设置 Neo4j 配置
     try:
+        if neo4j_option == "Neo4j Aura":
+            CURRENT_NEO4J_CONFIG = set_neo4j_config("AURA")
+        else:
+            CURRENT_NEO4J_CONFIG = set_neo4j_config("LOCAL")
+        
+        # 初始化 Neo4j
         initialize_neo4j()
     except Exception as e:
-        st.error(f"初始化Neo4j时出错: {str(e)}")
+        st.error(f"初始化 Neo4j 时出错: {str(e)}")
         return
 
     # 添加标题和开发者信息
@@ -191,10 +197,8 @@ def main():
 
     with col2:
         if neo4j_option == "Neo4j Aura":
-            CURRENT_NEO4J_CONFIG = set_neo4j_config("AURA")
             connection_status = "已选择连接到 Neo4j Aura"
         else:
-            CURRENT_NEO4J_CONFIG = set_neo4j_config("LOCAL")
             connection_status = "已选择连接到本地 Neo4j"
 
     with col3:

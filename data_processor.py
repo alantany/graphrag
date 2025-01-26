@@ -41,7 +41,12 @@ LOCAL_PASSWORD = "Mikeno01"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-CURRENT_NEO4J_CONFIG = {}
+# 设置默认配置
+CURRENT_NEO4J_CONFIG = {
+    "URI": AURA_URI,  # 默认使用 Aura
+    "USERNAME": AURA_USERNAME,
+    "PASSWORD": AURA_PASSWORD
+}
 
 client = None
 
@@ -965,12 +970,39 @@ def clear_vector_data():
 
 def initialize_neo4j():
     try:
+        # 确保配置已设置
+        if not CURRENT_NEO4J_CONFIG or not all(CURRENT_NEO4J_CONFIG.values()):
+            logger.error("Neo4j 配置未正确设置")
+            # 使用默认配置
+            global CURRENT_NEO4J_CONFIG
+            CURRENT_NEO4J_CONFIG = {
+                "URI": AURA_URI,
+                "USERNAME": AURA_USERNAME,
+                "PASSWORD": AURA_PASSWORD
+            }
+            logger.info("已设置默认 Neo4j 配置")
+
         driver = get_neo4j_driver()
         with driver.session() as session:
+            # 测试连接
+            try:
+                session.run("RETURN 1 AS test").single()
+                logger.info("Neo4j 连接测试成功")
+            except Exception as e:
+                logger.error(f"Neo4j 连接测试失败: {str(e)}")
+                raise
+
             # 检查索引是否存在
             try:
-                result = session.run("CALL db.indexes() YIELD name WHERE name = 'entityFulltextIndex'").single()
-                if not result:
+                result = session.run("""
+                    CALL db.indexes() 
+                    YIELD name, labelsOrTypes, properties 
+                    WHERE name = 'entityFulltextIndex' 
+                    RETURN count(*) > 0 AS exists
+                """).single()
+                
+                if not result or not result.get('exists', False):
+                    logger.info("全文索引不存在，正在创建...")
                     # 创建全文索引
                     session.run("""
                     CALL db.index.fulltext.createNodeIndex(
@@ -980,18 +1012,25 @@ def initialize_neo4j():
                     )
                     """)
                     logger.info("成功创建全文索引 'entityFulltextIndex'")
+                else:
+                    logger.info("全文索引已存在")
             except Exception as e:
                 logger.error(f"检查或创建索引时出错: {str(e)}")
                 # 尝试创建索引
-                session.run("""
-                CALL db.index.fulltext.createNodeIndex(
-                    'entityFulltextIndex',
-                    ['Entity'],
-                    ['name', 'content']
-                )
-                """)
-                logger.info("成功创建全文索引 'entityFulltextIndex'")
+                try:
+                    session.run("""
+                    CALL db.index.fulltext.createNodeIndex(
+                        'entityFulltextIndex',
+                        ['Entity'],
+                        ['name', 'content']
+                    )
+                    """)
+                    logger.info("成功创建全文索引 'entityFulltextIndex'")
+                except Exception as e2:
+                    logger.error(f"创建索引失败: {str(e2)}")
+                    raise
         driver.close()
+        logger.info("Neo4j 初始化完成")
     except Exception as e:
         logger.error(f"初始化 Neo4j 时出错: {str(e)}")
         raise
