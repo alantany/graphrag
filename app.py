@@ -30,7 +30,7 @@ from data_processor import (
     generate_final_answer, vector_search, execute_neo4j_query,
     initialize_faiss, create_fulltext_index, search_fulltext_index,
     open_dir, delete_graph_data, delete_vector_data, delete_fulltext_index,
-    clear_vector_data, Term, initialize_neo4j
+    clear_vector_data, Term, initialize_neo4j, CURRENT_NEO4J_CONFIG
 )
 from whoosh.query import Term
 
@@ -129,12 +129,37 @@ def main():
 
         # 根据选择设置配置
         if neo4j_option == "Neo4j Aura":
-            set_neo4j_config("AURA")
+            config = set_neo4j_config("AURA")
         else:
-            set_neo4j_config("LOCAL")
+            config = set_neo4j_config("LOCAL")
         
         # 初始化 Neo4j
         initialize_neo4j()
+
+        with col2:
+            if neo4j_option == "Neo4j Aura":
+                connection_status = "已选择连接到 Neo4j Aura"
+            else:
+                connection_status = "已选择连接到本地 Neo4j"
+
+        with col3:
+            # 测试数据库连接
+            try:
+                driver = get_neo4j_driver()
+                with driver.session() as session:
+                    result = session.run("RETURN 1 AS test")
+                    test_value = result.single()["test"]
+                    if test_value == 1:
+                        connection_status += " - 连接成功"
+                    else:
+                        connection_status += " - 连接测试失败"
+                driver.close()
+            except Exception as e:
+                connection_status += f" - 连接错误: {str(e)}"
+                st.error(f"数据库连接错误: {str(e)}")
+
+        st.write(connection_status)
+
     except Exception as e:
         st.error(f"初始化 Neo4j 时出错: {str(e)}")
         return
@@ -195,36 +220,6 @@ def main():
             vectors = index.reconstruct_n(0, index.ntotal)
             faiss_index.add(vectors)
         st.session_state.faiss_id_counter += sum(len(chunks) for chunks, _, _ in st.session_state.file_indices.values())
-
-    # Neo4j 配置选择
-    with col2:
-        if neo4j_option == "Neo4j Aura":
-            connection_status = "已选择连接到 Neo4j Aura"
-        else:
-            connection_status = "已选择连接到本地 Neo4j"
-
-    with col3:
-        # 测试数据库连接
-        if CURRENT_NEO4J_CONFIG:
-            try:
-                driver = get_neo4j_driver()
-                with driver.session() as session:
-                    result = session.run("RETURN 1 AS test")
-                    test_value = result.single()["test"]
-                    if test_value == 1:
-                        connection_status += " - 连接成功"
-                    else:
-                        connection_status += " - 连接测试失败"
-                driver.close()
-            except Exception as e:
-                connection_status += f" - 连接错误: {str(e)}"
-        else:
-            connection_status += " - 配置无效或未置"
-
-    st.write(connection_status)
-
-    # 添加一个分隔线
-    st.markdown("---")
 
     # 创建四个标签页
     tab1, tab2, tab3, tab4 = st.tabs(["文档上传", "知识库问答", "数据库检索", "数据管理"])

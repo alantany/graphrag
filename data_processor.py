@@ -996,9 +996,12 @@ def initialize_neo4j():
                 logger.error(f"Neo4j 连接测试失败: {str(e)}")
                 raise
 
-            # 检查并创建约束和索引
+            # 检查并创建约束和索引，使用单独的事务
             try:
                 # 创建唯一约束
+                session.run("""
+                DROP CONSTRAINT entity_name_unique IF EXISTS
+                """)
                 session.run("""
                 CREATE CONSTRAINT entity_name_unique IF NOT EXISTS
                 FOR (n:Entity)
@@ -1006,7 +1009,10 @@ def initialize_neo4j():
                 """)
                 logger.info("实体名称唯一约束创建成功")
 
-                # 创建索引
+                # 创建索引（使用单独的事务）
+                session.run("""
+                DROP INDEX entity_name_index IF EXISTS
+                """)
                 session.run("""
                 CREATE INDEX entity_name_index IF NOT EXISTS
                 FOR (n:Entity)
@@ -1014,7 +1020,10 @@ def initialize_neo4j():
                 """)
                 logger.info("实体名称索引创建成功")
 
-                # 创建内容索引
+                # 创建内容索引（使用单独的事务）
+                session.run("""
+                DROP INDEX entity_content_index IF EXISTS
+                """)
                 session.run("""
                 CREATE INDEX entity_content_index IF NOT EXISTS
                 FOR (n:Entity)
@@ -1024,6 +1033,13 @@ def initialize_neo4j():
 
             except Exception as e:
                 logger.error(f"创建索引和约束时出错: {str(e)}")
+                # 尝试清理可能的部分创建
+                try:
+                    session.run("DROP CONSTRAINT entity_name_unique IF EXISTS")
+                    session.run("DROP INDEX entity_name_index IF EXISTS")
+                    session.run("DROP INDEX entity_content_index IF EXISTS")
+                except:
+                    pass
                 raise
 
         driver.close()
