@@ -457,15 +457,17 @@ def query_graph(query):
     driver = get_neo4j_driver()
     
     with driver.session() as session:
-        # 使用模糊匹配和双向关系查询
+        # 使用标准索引进行查询
         result = session.run("""
-        CALL db.index.fulltext.queryNodes("entityFulltextIndex", $query) YIELD node, score
-        OPTIONAL MATCH (node)-[r]-(related)
+        MATCH (n:Entity)
+        WHERE n.name CONTAINS $query OR n.content CONTAINS $query
+        WITH n
+        OPTIONAL MATCH (n)-[r]-(related)
         WHERE related.source IS NOT NULL
-        RETURN node.name AS Entity, type(r) AS Relation, r.type AS RelationType, 
-               related.name AS Related, node.content AS Content, node.source AS Source,
-               related.source AS RelatedSource, score
-        ORDER BY score DESC
+        RETURN n.name AS Entity, type(r) AS Relation, r.type AS RelationType, 
+               related.name AS Related, n.content AS Content, n.source AS Source,
+               related.source AS RelatedSource
+        ORDER BY n.name
         LIMIT 20
         """, {"query": query})
         
@@ -994,43 +996,36 @@ def initialize_neo4j():
                 logger.error(f"Neo4j 连接测试失败: {str(e)}")
                 raise
 
-            # 检查索引是否存在
+            # 检查并创建约束和索引
             try:
-                result = session.run("""
-                    CALL db.indexes() 
-                    YIELD name, labelsOrTypes, properties 
-                    WHERE name = 'entityFulltextIndex' 
-                    RETURN count(*) > 0 AS exists
-                """).single()
-                
-                if not result or not result.get('exists', False):
-                    logger.info("全文索引不存在，正在创建...")
-                    # 创建全文索引
-                    session.run("""
-                    CALL db.index.fulltext.createNodeIndex(
-                        'entityFulltextIndex',
-                        ['Entity'],
-                        ['name', 'content']
-                    )
-                    """)
-                    logger.info("成功创建全文索引 'entityFulltextIndex'")
-                else:
-                    logger.info("全文索引已存在")
+                # 创建唯一约束
+                session.run("""
+                CREATE CONSTRAINT entity_name_unique IF NOT EXISTS
+                FOR (n:Entity)
+                REQUIRE n.name IS UNIQUE
+                """)
+                logger.info("实体名称唯一约束创建成功")
+
+                # 创建索引
+                session.run("""
+                CREATE INDEX entity_name_index IF NOT EXISTS
+                FOR (n:Entity)
+                ON (n.name)
+                """)
+                logger.info("实体名称索引创建成功")
+
+                # 创建内容索引
+                session.run("""
+                CREATE INDEX entity_content_index IF NOT EXISTS
+                FOR (n:Entity)
+                ON (n.content)
+                """)
+                logger.info("实体内容索引创建成功")
+
             except Exception as e:
-                logger.error(f"检查或创建索引时出错: {str(e)}")
-                # 尝试创建索引
-                try:
-                    session.run("""
-                    CALL db.index.fulltext.createNodeIndex(
-                        'entityFulltextIndex',
-                        ['Entity'],
-                        ['name', 'content']
-                    )
-                    """)
-                    logger.info("成功创建全文索引 'entityFulltextIndex'")
-                except Exception as e2:
-                    logger.error(f"创建索引失败: {str(e2)}")
-                    raise
+                logger.error(f"创建索引和约束时出错: {str(e)}")
+                raise
+
         driver.close()
         logger.info("Neo4j 初始化完成")
     except Exception as e:
