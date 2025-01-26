@@ -83,7 +83,7 @@ def set_neo4j_config(config_type):
         return False
     
     if not all(CURRENT_NEO4J_CONFIG.values()):
-        logger.error(f"Neo4j 配置不完���: {CURRENT_NEO4J_CONFIG}")
+        logger.error(f"Neo4j 配置不完: {CURRENT_NEO4J_CONFIG}")
         return False
     
     logger.info(f"Neo4j 配已设置: URI={CURRENT_NEO4J_CONFIG['URI']}, USERNAME={CURRENT_NEO4J_CONFIG['USERNAME']}")
@@ -157,7 +157,7 @@ def extract_keywords(text, top_k=5):
     # 使用最后一层的隐藏状态
     last_hidden_state = outputs.last_hidden_state[0]
     
-    # 计算每个词的重要得分（���里使用简单的L2数）
+    # 计算每个词的重要得分（这里使用简单的L2数）
     word_importance = torch.norm(last_hidden_state, dim=1)
     
     # 获取top_k个重要的词
@@ -300,10 +300,10 @@ def process_data(content, file_name):
        - 个人史
        - 家族史
        - 体格检查结果
-       - 辅助检查结果��如血常规、影像学检查等）
+       - 辅助检查结果（如血常规、影像学检查等）
        - 诊疗经过
        - 用药情况
-       - 手术信息（如果有
+       - 手术信息（如果有）
     5. 识别任何并发症、特殊情况或注意事项。
     6. 提取出院诊断、出院医嘱等出院相关信息。
 
@@ -609,7 +609,6 @@ def get_neo4j_driver():
     return GraphDatabase.driver(
         CURRENT_NEO4J_CONFIG["URI"],
         auth=(CURRENT_NEO4J_CONFIG["USERNAME"], CURRENT_NEO4J_CONFIG["PASSWORD"])
-    )
 
 def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, excerpt, graph_entities, graph_relations):
     prompt = f"""
@@ -962,3 +961,19 @@ def clear_vector_data():
             os.remove(os.path.join('indices', file))
     
     logger.info("所有向量数据已被清除")
+
+def initialize_neo4j():
+    driver = get_neo4j_driver()
+    with driver.session() as session:
+        # 检查索引是否存在
+        try:
+            session.run("CALL db.indexes() YIELD name WHERE name = 'entityFulltextIndex'")
+        except:
+            # 创建全文索引
+            session.run("""
+            CALL db.index.fulltext.createNodeIndex(
+                'entityFulltextIndex',
+                ['Entity'],
+                ['name', 'content']
+            )
+            """)

@@ -30,7 +30,7 @@ from data_processor import (
     generate_final_answer, vector_search, execute_neo4j_query,
     initialize_faiss, create_fulltext_index, search_fulltext_index,
     open_dir, delete_graph_data, delete_vector_data, delete_fulltext_index,
-    clear_vector_data, Term
+    clear_vector_data, Term, initialize_neo4j
 )
 from whoosh.query import Term
 
@@ -117,6 +117,13 @@ class CustomSentenceTransformer:
 SentenceTransformer = CustomSentenceTransformer
 
 def main():
+    # 在主函数开始时初始化Neo4j
+    try:
+        initialize_neo4j()
+    except Exception as e:
+        st.error(f"初始化Neo4j时出错: {str(e)}")
+        return
+
     # 添加标题和开发者信息
     st.markdown(
         """
@@ -447,7 +454,7 @@ def main():
                             context = "\n\n".join([f"文档: {result['title']}\n内容: {result['content']}" for result in fulltext_results[:3]])
                             
                             # 使用 OpenAI API 生成总结答案
-                            prompt = f"""基于以下从全文索引中检索到的信息，��回答问题并提供简��明了的总结：
+                            prompt = f"""基于以下从全文索引中检索到的信息，回答问题并提供简明了的总结：
 
 问题：{fulltext_query}
 
@@ -669,7 +676,7 @@ def main():
                         else:
                             st.warning("没有找到相关文档")
                     except Exception as e:
-                        st.error(f"搜索全文索��时出错: {str(e)}")
+                        st.error(f"搜索全文索时出错: {str(e)}")
 
         else:  # Neo4j 命令执行
             st.subheader("Neo4j 命令执行")
@@ -830,7 +837,7 @@ def main():
                     clear_vector_data()
                     st.session_state.file_indices = {}
 
-                    # 重新处理���有文档
+                    # 重新处理所有文档
                     for file_name in os.listdir('indices'):
                         if file_name.endswith('.pkl'):
                             file_path = os.path.join('indices', file_name)
