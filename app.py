@@ -40,7 +40,7 @@ from data_processor import faiss_id_to_text, faiss_id_counter, faiss_index
 # 初始化 OpenAI 客户端
 client = OpenAI(
     api_key="sk-1pUmQlsIkgla3CuvKTgCrzDZ3r0pBxO608YJvIHCN18lvOrn",  # 使用您的 API 密钥
-    base_url="https://api.chatanywhere.tech/v1"
+    base_url="http://152.70.248.22:1234/api/chat"
 )
 
 # 设置面配置
@@ -65,8 +65,8 @@ st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # 初始化 OpenAI 客户端
 initialize_openai(
-    api_key="sk-1pUmQlsIkgla3CuvKTgCrzDZ3r0pBxO608YJvIHCN18lvOrn", #free版
-    base_url="https://api.chatanywhere.tech/v1"
+    api_key="EMPTY",  # Ollama 不需要 API key
+    base_url="http://152.70.248.22:1234/api/chat"
 )
 
 # 初始化 session state
@@ -548,6 +548,8 @@ def main():
                     
                     net = Network(notebook=True, width="100%", height="500px", bgcolor="#222222", font_color="white")
                     net.from_nx(G)
+                    net.toggle_physics(True)
+                    net.show_buttons(filter_=['physics'])
                     net.save_graph("graph.html")
                     
                     with open("graph.html", 'r', encoding='utf-8') as f:
@@ -561,7 +563,7 @@ def main():
                     # 显示全文检索结果
                     if fulltext_results:
                         st.write("全文检索结果（前3个）：")
-                        for result in fulltext_results[:3]:
+                        for result in fulltext_results[:3]:  # 显示前3个结果
                             st.write(f"- 文档: {result['title']}, 相关度: {result['score']:.2f}")
                             highlights = result['highlights']
                             # 处理高亮文本
@@ -572,7 +574,7 @@ def main():
                             # 移除可能残留的HTML标签
                             highlights = re.sub(r'<[^>]+>', '', highlights)
                             st.markdown(f"  匹配内容: {highlights}")
-                            st.write(f"  文档内容片段: {result['content']}")
+                            st.write(f"  文档内容片段: {result['content'][:200]}...")  # 只显示前200个字符
                     else:
                         st.write("全文检索未找到相关结果。")
 
@@ -624,6 +626,8 @@ def main():
                     
                     net = Network(notebook=True, width="100%", height="500px", bgcolor="#222222", font_color="white")
                     net.from_nx(G)
+                    net.toggle_physics(True)
+                    net.show_buttons(filter_=['physics'])
                     net.save_graph("graph.html")
                     
                     with open("graph.html", 'r', encoding='utf-8') as f:

@@ -99,7 +99,7 @@ def set_neo4j_config(config_type):
 
 def initialize_openai(api_key, base_url):
     global client
-    client = OpenAI(api_key=api_key, base_url=base_url)
+    client = OpenAI(api_key=api_key, base_url="http://152.70.248.22:1234/api/chat")
     logger.info("OpenAI 初始化完成")
 
 def initialize_faiss():
@@ -338,16 +338,14 @@ def process_data(content, file_name):
     {content}
     """
 
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",  # 使用允许的模型
-        messages=[
-            {"role": "system", "content": "你是一个专门处理电子病历的AI助手，擅长从复杂的医疗记录中提取关键信息和关系。请尽可能详细地提取所有相关信息，并确保所有信息都与患者姓名建立关系。"},
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=2000  # 减少 token 限制以适应 gpt-3.5-turbo 的限制
+    llm = OpenAI(
+        temperature=0.7,
+        model="deepseek",  # 使用 Deepseek 模型
+        openai_api_base="http://152.70.248.22:1234/api/chat",
+        openai_api_key="EMPTY"  # Ollama 不需要 API key
     )
-
-    result = response.choices[0].message.content
+    response = llm.call(query=prompt)
+    result = response.json()
     logger.info(f"OpenAI API 返回的原始内容: {result}")
 
     try:

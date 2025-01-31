@@ -797,7 +797,7 @@ def generate_explanation(nl_query, sql_query, df):
     )
 
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="deepseek",  # 使用 Deepseek 模型
         messages=[
             {"role": "system", "content": "你是一个数据分析专家，擅长解释SQL查询结果。"},
             {"role": "user", "content": prompt}
