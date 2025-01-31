@@ -1052,3 +1052,71 @@ def initialize_neo4j():
     except Exception as e:
         logger.error(f"初始化 Neo4j 时出错: {str(e)}")
         raise
+
+class OpenAIAnalyzer(Analyzer):
+    def __call__(self, text, **kwargs):
+        tokens = openai_tokenize(text)
+        for t in tokens:
+            yield Token(text=t, pos=len(t))
+
+def create_fulltext_index(content, file_name):
+    logger.info(f"开始为文件 {file_name} 创建或更新全文索引")
+    logger.info(f"文件内容长度: {len(content)}")
+    logger.info(f"文件内容前200字符: {content[:200]}")
+    
+    if not os.path.exists("fulltext_index"):
+        os.mkdir("fulltext_index")
+        logger.info("创建了新的全文索引目录")
+    
+    schema = Schema(title=TEXT(stored=True), content=TEXT(stored=True, analyzer=OpenAIAnalyzer()))
+    
+    if not os.path.exists("fulltext_index/MAIN_WRITELOCK"):
+        ix = create_in("fulltext_index", schema)
+    else:
+        ix = open_dir("fulltext_index")
+    
+    writer = ix.writer()
+    writer.add_document(title=file_name, content=content)
+    writer.commit()
+    
+    logger.info(f"全文索引更新完成，文件名: {file_name}")
+    
+    # 验证索引内容
+    with ix.searcher() as searcher:
+        results = searcher.search(Term("title", file_name))
+        if results:
+            logger.info(f"成功检索到文档: {file_name}")
+            logger.info(f"索引中的文档内容长度: {len(results[0]['content'])}")
+            logger.info(f"索引中的文档内容前200字符: {results[0]['content'][:200]}")
+        else:
+            logger.warning(f"无法检索到文档: {file_name}")
+    
+    return ix
+
+def search_fulltext_index(query):
+    logger.info(f"开始全文检索，查询: {query}")
+    if not os.path.exists("fulltext_index"):
+        logger.warning("全文索引目录不存在，无法执行搜索")
+        return []
+
+    ix = open_dir("fulltext_index")
+    with ix.searcher() as searcher:
+        keywords = extract_core_keywords(query)
+        logger.info(f"提取的核心关键词: {keywords}")
+
+        query_parser = QueryParser("content", ix.schema, group=OrGroup.factory(0.9))
+        query_terms = []
+        for keyword in keywords:
+            query_terms.append(Term("content", keyword))
+        
+        final_query = query_parser.parse(" OR ".join(keywords))
+        logger.info(f"构建的查询: {final_query}")
+
+        results = searcher.search(final_query, limit=None)
+        logger.info(f"搜索结果数量: {len(results)}")
+        
+        return [{"title": r["title"], 
+                 "score": r.score, 
+                 "highlights": r.highlights("content", top=5),  # 增加返回的高亮片段数量
+                 "content": r.get("content", "")[:500]  # 增加返回的内容长度
+                } for r in results]
