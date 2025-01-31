@@ -40,7 +40,8 @@ from data_processor import faiss_id_to_text, faiss_id_counter, faiss_index
 # 初始化 OpenAI 客户端
 client = OpenAI(
     api_key="EMPTY",  # Ollama 不需要 API key
-    base_url="http://152.70.248.22:1234/api/chat"  # Ollama API 地址
+    base_url="http://152.70.248.22:1234/api/chat",  # Ollama API 地址
+    default_headers={"Content-Type": "application/json"}
 )
 
 # 设置面配置

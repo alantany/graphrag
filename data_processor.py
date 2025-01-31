@@ -99,7 +99,11 @@ def set_neo4j_config(config_type):
 
 def initialize_openai(api_key, base_url):
     global client
-    client = OpenAI(api_key=api_key, base_url="http://152.70.248.22:1234/api/chat")
+    client = OpenAI(
+        api_key=api_key, 
+        base_url="http://152.70.248.22:1234/api/chat",
+        default_headers={"Content-Type": "application/json"}
+    )
     logger.info("OpenAI 初始化完成")
 
 def initialize_faiss():
@@ -227,7 +231,8 @@ def rag_qa(query, file_indices, k=10):
             {"role": "system", "content": "你是一个医疗助手，根据给定的病历信息回答问题。请确保回答准确、相关，并引用原文。"},
             {"role": "user", "content": prompt}
         ],
-        max_tokens=500
+        max_tokens=500,
+        stream=False
     )
     
     answer = response.choices[0].message.content.strip()
@@ -543,7 +548,8 @@ def hybrid_search(query):
                 {"role": "system", "content": "你是一个医疗助手，根据给定的实体信息和关系准确回答问题。请直接使用提供的信息，不要添加未给出的假设。如果信息不足，请如说明。"},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=150
+            max_tokens=150,
+            stream=False
         )
         
         logger.info(f"OpenAI 响应: {response}")
@@ -662,7 +668,8 @@ def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, 
             {"role": "system", "content": "你是个智能助手，能够综合分析来自不同数据源的信息，并提供准确、全面的回答。你需要仔细考虑所有提供的信息，特别是要注意全文检索的直接匹配结果和图数据库中的关系信息。即使某些信息可能看起来不太直接相关，也请在回答中提及并解释其潜在相关性。"},
             {"role": "user", "content": prompt}
         ],
-        max_tokens=1000
+        max_tokens=1000,
+        stream=False
     )
     
     return response.choices[0].message.content.strip()
