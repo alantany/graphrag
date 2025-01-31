@@ -28,6 +28,7 @@ from whoosh.index import create_in, open_dir
 from whoosh.qparser import QueryParser
 from whoosh.searching import NoTermsException
 import httpx
+import time
 
 # 在文件开头声明全局变量
 global CURRENT_NEO4J_CONFIG
@@ -102,11 +103,12 @@ def initialize_openai(api_key, base_url):
     global client
     client = httpx.Client(
         base_url="http://152.70.248.22:1234",
-        headers={"Content-Type": "application/json"}
+        headers={"Content-Type": "application/json"},
+        timeout=60.0  # 设置60秒超时
     )
     logger.info("OpenAI 初始化完成")
 
-def chat_completion_with_retry(messages, model="deepseek-r1:14b", max_tokens=None, stream=False):
+def chat_completion_with_retry(messages, model="deepseek-r1:14b", max_tokens=None, stream=False, max_retries=3):
     data = {
         "model": model,
         "messages": messages
@@ -114,35 +116,51 @@ def chat_completion_with_retry(messages, model="deepseek-r1:14b", max_tokens=Non
     if max_tokens is not None:
         data["max_tokens"] = max_tokens
     
-    response = client.post(
-        "/api/chat",
-        json=data
-    )
-    
-    if response.status_code == 200:
-        # 处理流式响应
-        full_response = ""
-        for line in response.iter_lines():
-            if line:
-                try:
-                    json_response = json.loads(line)
-                    if json_response.get("done") == True:
-                        break
-                    if "content" in json_response.get("message", {}):
-                        full_response += json_response["message"]["content"]
-                except json.JSONDecodeError:
-                    continue
-        
-        # 构造与OpenAI API兼容的响应格式
-        return {
-            "choices": [{
-                "message": {
-                    "content": full_response
+    for attempt in range(max_retries):
+        try:
+            response = client.post(
+                "/api/chat",
+                json=data,
+                timeout=60.0  # 设置60秒超时
+            )
+            
+            if response.status_code == 200:
+                # 处理流式响应
+                full_response = ""
+                for line in response.iter_lines():
+                    if line:
+                        try:
+                            json_response = json.loads(line)
+                            if json_response.get("done") == True:
+                                break
+                            if "content" in json_response.get("message", {}):
+                                full_response += json_response["message"]["content"]
+                        except json.JSONDecodeError:
+                            continue
+                
+                # 构造与OpenAI API兼容的响应格式
+                return {
+                    "choices": [{
+                        "message": {
+                            "content": full_response
+                        }
+                    }]
                 }
-            }]
-        }
-    else:
-        raise Exception(f"API调用失败: {response.status_code} {response.text}")
+            else:
+                if attempt == max_retries - 1:  # 最后一次尝试
+                    raise Exception(f"API调用失败: {response.status_code} {response.text}")
+                logger.warning(f"第{attempt + 1}次尝试失败，正在重试...")
+                time.sleep(1)  # 重试前等待1秒
+        except (httpx.ReadTimeout, httpx.ConnectTimeout) as e:
+            if attempt == max_retries - 1:  # 最后一次尝试
+                raise Exception(f"请求超时: {str(e)}")
+            logger.warning(f"第{attempt + 1}次尝试超时，正在重试...")
+            time.sleep(1)  # 重试前等待1秒
+        except Exception as e:
+            if attempt == max_retries - 1:  # 最后一次尝试
+                raise
+            logger.warning(f"第{attempt + 1}次尝试出错: {str(e)}，正在重试...")
+            time.sleep(1)  # 重试前等待1秒
 
 def initialize_faiss():
     global faiss_index, faiss_id_to_text, faiss_id_counter
