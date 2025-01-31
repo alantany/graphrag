@@ -171,10 +171,11 @@ import streamlit.components.v1 as components
 import time
 
 # 初始化
-client = OpenAI(
-    api_key="sk-1pUmQlsIkgla3CuvKTgCrzDZ3r0pBxO608YJvIHCN18lvOrn",
-    base_url="https://api.chatanywhere.tech/v1"
-)
+OpenAI(
+        api_key="EMPTY",  # Ollama 不需要 API key
+        base_url="http://152.70.248.22:1234/api/chat"  # Ollama API 地址
+    )
+
 
 @st.cache_resource
 def load_model():
