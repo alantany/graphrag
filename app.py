@@ -66,7 +66,7 @@ st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 # 初始化 OpenAI 客户端
 initialize_openai(
     api_key="EMPTY",  # Ollama 不需要 API key
-    base_url="http://152.70.248.22:1234/api/chat"
+    base_url="http://152.70.248.22:1234"
 )
 
 # 初始化 session state
