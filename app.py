@@ -34,6 +34,7 @@ from data_processor import (
 )
 from whoosh.query import Term
 import httpx
+import json
 
 # 在文件顶部的导入语句之后添加
 from data_processor import faiss_id_to_text, faiss_id_counter, faiss_index
@@ -94,7 +95,21 @@ def decompose_query(query):
             ]
         }
     )
-    return response.json()["choices"][0]["message"]["content"].strip().split("\n")
+    
+    # 处理流式响应
+    full_response = ""
+    for line in response.iter_lines():
+        if line:
+            try:
+                json_response = json.loads(line)
+                if json_response.get("done") == True:
+                    break
+                if "content" in json_response.get("message", {}):
+                    full_response += json_response["message"]["content"]
+            except json.JSONDecodeError:
+                continue
+    
+    return full_response.strip().split("\n")
 
 def mean_pooling(model_output, attention_mask):
     token_embeddings = model_output[0]
