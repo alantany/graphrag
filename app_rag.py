@@ -128,6 +128,7 @@ Werkzeug==3.0.4
 """
 
 import streamlit as st
+import httpx
 
 # 设置页面配置必须是第一个 Streamlit 命令
 st.set_page_config(
@@ -149,7 +150,6 @@ hide_streamlit_style = """
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-from openai import OpenAI
 from sentence_transformers import SentenceTransformer
 import multiprocessing
 import PyPDF2
@@ -171,12 +171,10 @@ import streamlit.components.v1 as components
 import time
 
 # 初始化
-OpenAI(
-    api_key="EMPTY",  # Ollama 不需要 API key
-    base_url="http://152.70.248.22:1234/api/chat",  # Ollama API 地址
-    default_headers={"Content-Type": "application/json"}
+client = httpx.Client(
+    base_url="http://152.70.248.22:1234",
+    headers={"Content-Type": "application/json"}
 )
-
 
 @st.cache_resource
 def load_model():

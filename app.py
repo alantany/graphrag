@@ -33,15 +33,15 @@ from data_processor import (
     clear_vector_data, Term, initialize_neo4j, CURRENT_NEO4J_CONFIG
 )
 from whoosh.query import Term
+import httpx
 
 # 在文件顶部的导入语句之后添加
 from data_processor import faiss_id_to_text, faiss_id_counter, faiss_index
 
 # 初始化 OpenAI 客户端
-client = OpenAI(
-    api_key="EMPTY",  # Ollama 不需要 API key
-    base_url="http://152.70.248.22:1234/api/chat",  # Ollama API 地址
-    default_headers={"Content-Type": "application/json"}
+client = httpx.Client(
+    base_url="http://152.70.248.22:1234",
+    headers={"Content-Type": "application/json"}
 )
 
 # 设置面配置
@@ -84,14 +84,17 @@ def decompose_query(query):
     2. 子查询2
     ...
     """
-    response = client.chat.completions.create(
-        model="deepseek-r1:14b",
-        messages=[
-            {"role": "system", "content": "你是一专门于分解复杂查询的AI助手。"},
-            {"role": "user", "content": prompt}
-        ]
+    response = client.post(
+        "/api/chat",
+        json={
+            "model": "deepseek-r1:14b",
+            "messages": [
+                {"role": "system", "content": "你是一专门于分解复杂查询的AI助手。"},
+                {"role": "user", "content": prompt}
+            ]
+        }
     )
-    return response.choices[0].message.content.strip().split("\n")
+    return response.json()["choices"][0]["message"]["content"].strip().split("\n")
 
 def mean_pooling(model_output, attention_mask):
     token_embeddings = model_output[0]
@@ -407,16 +410,19 @@ def main():
                     请根据以上信息，生成一个简洁明了的综合回答。回答应该直接针对问题"{graph_query}"，并包含所有相关的重要信息。
                     """
                     
-                    response = client.chat.completions.create(
-                        model="deepseek-r1:14b",
-                        messages=[
-                            {"role": "system", "content": "你是一个专门解释图数据库查询结果的AI助手。请提供准确、简洁的回答。"},
-                            {"role": "user", "content": context}
-                        ],
-                        max_tokens=200
+                    response = client.post(
+                        "/api/chat",
+                        json={
+                            "model": "deepseek-r1:14b",
+                            "messages": [
+                                {"role": "system", "content": "你是一个专门解释图数据库查询结果的AI助手。请提供准确、简洁的回答。"},
+                                {"role": "user", "content": context}
+                            ],
+                            "max_tokens": 200
+                        }
                     )
                     
-                    final_answer = response.choices[0].message.content.strip()
+                    final_answer = response.json()["choices"][0]["message"]["content"].strip()
                     
                     st.write("综合回答：", final_answer)
                     
@@ -470,16 +476,19 @@ def main():
 
 回答："""
 
-                            response = client.chat.completions.create(
-                                model="deepseek-r1:14b",
-                                messages=[
-                                    {"role": "system", "content": "你是一个专门用于总结和回答问题的AI助手。请基于给定的信息提供准确、简洁的回答。"},
-                                    {"role": "user", "content": prompt}
-                                ],
-                                max_tokens=300
+                            response = client.post(
+                                "/api/chat",
+                                json={
+                                    "model": "deepseek-r1:14b",
+                                    "messages": [
+                                        {"role": "system", "content": "你是一个专门用于总结和回答问题的AI助手。请基于给定的信息提供准确、简洁的回答。"},
+                                        {"role": "user", "content": prompt}
+                                    ],
+                                    "max_tokens": 300
+                                }
                             )
 
-                            summary = response.choices[0].message.content.strip()
+                            summary = response.json()["choices"][0]["message"]["content"].strip()
                             
                             # 显示总结答案
                             st.write("回答：")

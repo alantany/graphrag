@@ -27,6 +27,7 @@ from whoosh.fields import Schema, TEXT, ID
 from whoosh.index import create_in, open_dir
 from whoosh.qparser import QueryParser
 from whoosh.searching import NoTermsException
+import httpx
 
 # 在文件开头声明全局变量
 global CURRENT_NEO4J_CONFIG
@@ -99,12 +100,29 @@ def set_neo4j_config(config_type):
 
 def initialize_openai(api_key, base_url):
     global client
-    client = OpenAI(
-        api_key=api_key, 
-        base_url="http://152.70.248.22:1234/api/chat",
-        default_headers={"Content-Type": "application/json"}
+    client = httpx.Client(
+        base_url="http://152.70.248.22:1234",
+        headers={"Content-Type": "application/json"}
     )
     logger.info("OpenAI 初始化完成")
+
+def chat_completion_with_retry(messages, model="deepseek-r1:14b", max_tokens=None, stream=False):
+    data = {
+        "model": model,
+        "messages": messages
+    }
+    if max_tokens is not None:
+        data["max_tokens"] = max_tokens
+    
+    response = client.post(
+        "/api/chat",
+        json=data
+    )
+    
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"API调用失败: {response.status_code} {response.text}")
 
 def initialize_faiss():
     global faiss_index, faiss_id_to_text, faiss_id_counter
@@ -225,17 +243,15 @@ def rag_qa(query, file_indices, k=10):
 """
 
     # 发送给大模型
-    response = client.chat.completions.create(
-        model="deepseek-r1:14b",
+    response = chat_completion_with_retry(
         messages=[
             {"role": "system", "content": "你是一个医疗助手，根据给定的病历信息回答问题。请确保回答准确、相关，并引用原文。"},
             {"role": "user", "content": prompt}
         ],
-        max_tokens=500,
-        stream=False
+        max_tokens=500
     )
     
-    answer = response.choices[0].message.content.strip()
+    answer = response["choices"][0]["message"]["content"].strip()
     
     # 解析回答和相关原文
     if "相关原文：" in answer:
@@ -542,20 +558,18 @@ def hybrid_search(query):
         
         logger.info(f"发送到 OpenAI 的提示: {prompt}")
         
-        response = client.chat.completions.create(
-            model="deepseek-r1:14b",
+        response = chat_completion_with_retry(
             messages=[
                 {"role": "system", "content": "你是一个医疗助手，根据给定的实体信息和关系准确回答问题。请直接使用提供的信息，不要添加未给出的假设。如果信息不足，请如说明。"},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=150,
-            stream=False
+            max_tokens=150
         )
         
         logger.info(f"OpenAI 响应: {response}")
         
-        if response and response.choices and len(response.choices) > 0 and response.choices[0].message:
-            answer = response.choices[0].message.content.strip()
+        if response and response["choices"] and len(response["choices"]) > 0 and response["choices"][0]["message"]:
+            answer = response["choices"][0]["message"]["content"].strip()
             if not answer:
                 answer = "抱歉，我无法根据提供的信息回答这个问题。请尝试提供更多细节或以不同的方式提问。"
         else:
@@ -662,17 +676,15 @@ def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, 
     请确保回答全面且准确，不要忽视任何重要信息，特别是全文检索中直接匹配的内容。如果信息不足或存在不确定性，请在回答中明确指出。
     """
     
-    response = client.chat.completions.create(
-        model="deepseek-r1:14b",
+    response = chat_completion_with_retry(
         messages=[
             {"role": "system", "content": "你是个智能助手，能够综合分析来自不同数据源的信息，并提供准确、全面的回答。你需要仔细考虑所有提供的信息，特别是要注意全文检索的直接匹配结果和图数据库中的关系信息。即使某些信息可能看起来不太直接相关，也请在回答中提及并解释其潜在相关性。"},
             {"role": "user", "content": prompt}
         ],
-        max_tokens=1000,
-        stream=False
+        max_tokens=1000
     )
     
-    return response.choices[0].message.content.strip()
+    return response["choices"][0]["message"]["content"].strip()
 
 def vector_search(query, k=5):
     global faiss_index, faiss_id_to_text
@@ -761,15 +773,17 @@ class CustomChineseAnalyzer(Analyzer):
             yield Token(text=t.text, pos=t.pos, startchar=t.startchar, endchar=t.endchar)
 
 def openai_tokenize(text):
-    response = client.chat.completions.create(
-        model="deepseek-r1:14b",
-        messages=[
-            {"role": "system", "content": "你是一个专门用于中文分词的AI助手。请对给定的文本进行分词，特别注意医学术语。"},
-            {"role": "user", "content": f"请对以下文本进行分词，返回一个JSON格式的词语列表。文本：{text[:1000]}"}
-        ],
-        max_tokens=1000
+    response = client.post(
+        "/api/chat",
+        json={
+            "model": "deepseek-r1:14b",
+            "messages": [
+                {"role": "system", "content": "你是一个专门用于中文分词的AI助手。请对给定的文本进行分词，特别注意医学术语。"},
+                {"role": "user", "content": f"请对以下文本进行分词，返回一个JSON格式的词语列表。文本：{text[:1000]}"}
+            ]
+        }
     )
-    tokens = json.loads(response.choices[0].message.content)
+    tokens = response.json()
     return tokens
 
 class OpenAIAnalyzer(Analyzer):
@@ -841,27 +855,29 @@ def search_fulltext_index(query):
                 } for r in results]
 
 def extract_core_keywords(query):
-    response = client.chat.completions.create(
-        model="deepseek-r1:14b",
-        messages=[
-            {"role": "system", "content": "你是一个专门用于提取医疗领域核心关键词的AI助手。请从给定的问题中提取最重要的医学术语或症状描述。"},
-            {"role": "user", "content": f"""
-            从以下问题中提取2-3个最重要的核心关键词。这些关键词应该是搜索医疗文档时最有可能找到相关信息的词。
-            
-            注意：
-            1. 常见词"患者"、"病人"、"医生"、"医院"等不应被视为核心关键词，除非它们是问题的主要焦点。
-            2. 优先选择专业医学术语、症状描述或特定的疾病名称。
-            3. 关键词可以是题中明确出现的词，也可以是根据问题内容推断出的相关医学术语。
-            4. 如果问题中没有明确的医学术语，可以选择问题中最具体、最相关的词语。
+    response = client.post(
+        "/api/chat",
+        json={
+            "model": "deepseek-r1:14b",
+            "messages": [
+                {"role": "system", "content": "你是一个专门用于提取医疗领域核心关键词的AI助手。请从给定的问题中提取最重要的医学术语或症状描述。"},
+                {"role": "user", "content": f"""
+                从以下问题中提取2-3个最重要的核心关键词。这些关键词应该是搜索医疗文档时最有可能找到相关信息的词。
+                
+                注意：
+                1. 常见词"患者"、"病人"、"医生"、"医院"等不应被视为核心关键词，除非它们是问题的主要焦点。
+                2. 优先选择专业医学术语、症状描述或特定的疾病名称。
+                3. 关键词可以是题中明确出现的词，也可以是根据问题内容推断出的相关医学术语。
+                4. 如果问题中没有明确的医学术语，可以选择问题中最具体、最相关的词语。
 
-            问题：{query}
+                问题：{query}
 
-            核心关键词：
-            """}
-        ],
-        max_tokens=50
+                核心关键词：
+                """}
+            ]
+        }
     )
-    keywords = response.choices[0].message.content.strip().split(', ')
+    keywords = response.json()["choices"][0]["message"]["content"].strip().split(', ')
     return [keyword.strip() for keyword in keywords if keyword.strip()]  # 移除空字符串
 
 medical_synonyms = {
