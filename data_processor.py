@@ -126,23 +126,27 @@ def chat_completion_with_retry(messages, model="deepseek-r1:14b", max_tokens=Non
             
             if response.status_code == 200:
                 # 处理流式响应
-                full_response = ""
+                full_content = ""
                 for line in response.iter_lines():
-                    if line:
-                        try:
-                            json_response = json.loads(line)
-                            if json_response.get("done") == True:
-                                break
-                            if "content" in json_response.get("message", {}):
-                                full_response += json_response["message"]["content"]
-                        except json.JSONDecodeError:
-                            continue
+                    if not line:
+                        continue
+                    try:
+                        json_response = json.loads(line)
+                        if "message" in json_response and "content" in json_response["message"]:
+                            content = json_response["message"]["content"]
+                            if content:
+                                full_content += content
+                        if json_response.get("done", False):
+                            break
+                    except json.JSONDecodeError:
+                        logger.warning(f"无法解析JSON行: {line}")
+                        continue
                 
-                # 构造与OpenAI API兼容的响应格式
+                # 返回OpenAI格式的响应
                 return {
                     "choices": [{
                         "message": {
-                            "content": full_response
+                            "content": full_content.strip()
                         }
                     }]
                 }
