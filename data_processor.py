@@ -32,7 +32,7 @@ from whoosh.searching import NoTermsException
 global CURRENT_NEO4J_CONFIG
 
 # Neo4j连接配置
-AURA_URI = "neo4j+s://85c689ad.databases.neo4j.io:7687"
+AURA_URI = "neo4j+s://8316be4e.databases.neo4j.io:7687"
 AURA_USERNAME = "neo4j"
 AURA_PASSWORD = "XL37Q-0UhF1YA2diY3f9Ah3dLxHmWlyoN6rexDu9sdA"
 
