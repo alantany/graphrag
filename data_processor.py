@@ -835,12 +835,17 @@ def openai_tokenize(text):
             except json.JSONDecodeError:
                 continue
     
+    # 尝试将响应解析为词语列表
     try:
+        # 如果响应已经是JSON格式的词语列表
         tokens = json.loads(full_response)
-        return tokens
+        if isinstance(tokens, list):
+            return tokens
+        # 如果响应是普通文本，按空格分割
+        return full_response.strip().split()
     except json.JSONDecodeError:
-        # 如果无法解析为JSON，则按空格分割
-        return full_response.split()
+        # 如果无法解析为JSON，按空格分割
+        return full_response.strip().split()
 
 def extract_core_keywords(query):
     response = client.post(
@@ -1074,8 +1079,14 @@ def initialize_neo4j():
 class OpenAIAnalyzer(Analyzer):
     def __call__(self, text, **kwargs):
         tokens = openai_tokenize(text)
+        # 确保tokens是列表
+        if not isinstance(tokens, list):
+            tokens = str(tokens).split()
         for t in tokens:
-            yield Token(text=t, pos=len(t))
+            # 确保token是字符串
+            t = str(t).strip()
+            if t:  # 只处理非空token
+                yield Token(text=t, pos=len(t))
 
 def create_fulltext_index(content, file_name):
     logger.info(f"开始为文件 {file_name} 创建或更新全文索引")
@@ -1119,22 +1130,32 @@ def search_fulltext_index(query):
 
     ix = open_dir("fulltext_index")
     with ix.searcher() as searcher:
-        keywords = extract_core_keywords(query)
-        logger.info(f"提取的核心关键词: {keywords}")
+        try:
+            keywords = extract_core_keywords(query)
+            if not keywords:  # 如果没有提取到关键词，使用原始查询
+                keywords = [query]
+            logger.info(f"提取的核心关键词: {keywords}")
 
-        query_parser = QueryParser("content", ix.schema, group=OrGroup.factory(0.9))
-        query_terms = []
-        for keyword in keywords:
-            query_terms.append(Term("content", keyword))
-        
-        final_query = query_parser.parse(" OR ".join(keywords))
-        logger.info(f"构建的查询: {final_query}")
+            # 构建查询
+            query_terms = []
+            for keyword in keywords:
+                if keyword.strip():  # 只使用非空关键词
+                    query_terms.append(Term("content", keyword.strip()))
+            
+            if not query_terms:  # 如果没有有效的查询词
+                return []
+            
+            final_query = query_parser.parse(" OR ".join(k.strip() for k in keywords if k.strip()))
+            logger.info(f"构建的查询: {final_query}")
 
-        results = searcher.search(final_query, limit=None)
-        logger.info(f"搜索结果数量: {len(results)}")
-        
-        return [{"title": r["title"], 
-                 "score": r.score, 
-                 "highlights": r.highlights("content", top=5),  # 增加返回的高亮片段数量
-                 "content": r.get("content", "")[:500]  # 增加返回的内容长度
-                } for r in results]
+            results = searcher.search(final_query, limit=None)
+            logger.info(f"搜索结果数量: {len(results)}")
+            
+            return [{"title": r["title"], 
+                     "score": r.score, 
+                     "highlights": r.highlights("content", top=5) if hasattr(r, 'highlights') else "",
+                     "content": r.get("content", "")[:500]
+                    } for r in results]
+        except Exception as e:
+            logger.error(f"搜索过程中出错: {str(e)}")
+            return []
