@@ -1149,11 +1149,38 @@ def search_fulltext_index(query):
             results = searcher.search(final_query, limit=None)
             logger.info(f"搜索结果数量: {len(results)}")
             
-            return [{"title": r["title"], 
-                     "score": r.score, 
-                     "highlights": r.highlights("content", top=5) if hasattr(r, 'highlights') else "",
-                     "content": r.get("content", "")[:500]
-                    } for r in results]
+            formatted_results = []
+            for r in results:
+                try:
+                    # 安全地获取highlights
+                    highlights = ""
+                    if hasattr(r, 'highlights'):
+                        try:
+                            highlights = r.highlights("content", top=5)
+                            if highlights is None:
+                                highlights = ""
+                        except Exception as e:
+                            logger.warning(f"获取highlights时出错: {str(e)}")
+                            highlights = ""
+                    
+                    # 安全地获取content
+                    content = r.get("content", "")
+                    if content:
+                        content = content[:500]
+                    
+                    # 构建结果字典
+                    result_dict = {
+                        "title": r["title"],
+                        "score": float(r.score),  # 确保score是可序列化的
+                        "highlights": str(highlights),  # 确保highlights是字符串
+                        "content": str(content)  # 确保content是字符串
+                    }
+                    formatted_results.append(result_dict)
+                except Exception as e:
+                    logger.error(f"处理搜索结果时出错: {str(e)}")
+                    continue
+            
+            return formatted_results
         except Exception as e:
             logger.error(f"搜索过程中出错: {str(e)}")
             return []
