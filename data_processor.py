@@ -1094,10 +1094,15 @@ class OpenAIAnalyzer(Analyzer):
         # 确保tokens是列表
         if not isinstance(tokens, list):
             tokens = str(tokens).split()
+        
+        # 记录分词结果
+        logger.info(f"OpenAIAnalyzer分词结果: {tokens}")
+        
         for t in tokens:
             # 确保token是字符串
             t = str(t).strip()
             if t:  # 只处理非空token
+                logger.debug(f"生成token: {t}")
                 yield Token(text=t, pos=len(t))
 
 def create_fulltext_index(content, file_name):
@@ -1109,14 +1114,25 @@ def create_fulltext_index(content, file_name):
         os.mkdir("fulltext_index")
         logger.info("创建了新的全文索引目录")
     
+    # 创建schema时记录使用的分析器
+    logger.info("使用OpenAIAnalyzer作为内容分析器")
     schema = Schema(title=TEXT(stored=True), content=TEXT(stored=True, analyzer=OpenAIAnalyzer()))
     
     if not os.path.exists("fulltext_index/MAIN_WRITELOCK"):
         ix = create_in("fulltext_index", schema)
+        logger.info("创建了新的索引")
     else:
         ix = open_dir("fulltext_index")
+        logger.info("打开了现有索引")
     
     writer = ix.writer()
+    
+    # 在添加文档前记录一下分词结果
+    analyzer = OpenAIAnalyzer()
+    logger.info("测试文档内容的分词结果:")
+    for token in analyzer(content):
+        logger.debug(f"Token: {token.text}")
+    
     writer.add_document(title=file_name, content=content)
     writer.commit()
     
@@ -1124,13 +1140,14 @@ def create_fulltext_index(content, file_name):
     
     # 验证索引内容
     with ix.searcher() as searcher:
-        results = searcher.search(Term("title", file_name))
-        if results:
-            logger.info(f"成功检索到文档: {file_name}")
-            logger.info(f"索引中的文档内容长度: {len(results[0]['content'])}")
-            logger.info(f"索引中的文档内容前200字符: {results[0]['content'][:200]}")
-        else:
-            logger.warning(f"无法检索到文档: {file_name}")
+        # 使用精确匹配来测试索引
+        test_terms = ["主诉", "患者", "诊断"]
+        for term in test_terms:
+            results = searcher.search(Term("content", term))
+            logger.info(f"测试搜索词 '{term}' 的结果数量: {len(results)}")
+            if results:
+                logger.info(f"找到匹配的文档: {[r['title'] for r in results]}")
+                logger.info(f"第一个匹配文档的内容片段: {results[0]['content'][:100]}")
     
     return ix
 
@@ -1148,6 +1165,17 @@ def search_fulltext_index(query):
                 keywords = [query]
             logger.info(f"提取的核心关键词: {keywords}")
 
+            # 在搜索前测试每个关键词
+            for keyword in keywords:
+                if keyword.strip():
+                    # 使用精确匹配测试
+                    test_results = searcher.search(Term("content", keyword.strip()))
+                    logger.info(f"测试关键词 '{keyword}' 的精确匹配结果数量: {len(test_results)}")
+                    # 使用分词器测试
+                    analyzer = OpenAIAnalyzer()
+                    tokens = [token.text for token in analyzer(keyword)]
+                    logger.info(f"关键词 '{keyword}' 的分词结果: {tokens}")
+
             # 构建查询
             query_terms = []
             for keyword in keywords:
@@ -1162,41 +1190,23 @@ def search_fulltext_index(query):
             final_query = query_parser.parse(" OR ".join(k.strip() for k in keywords if k.strip()))
             logger.info(f"构建的查询: {final_query}")
 
+            # 记录索引的统计信息
+            logger.info(f"索引中的文档总数: {searcher.doc_count()}")
+            logger.info(f"索引中的词项统计: {searcher.doc_count_all()}")
+
             results = searcher.search(final_query, limit=None)
             logger.info(f"搜索结果数量: {len(results)}")
             
-            formatted_results = []
-            for r in results:
-                try:
-                    # 安全地获取highlights
-                    highlights = ""
-                    if hasattr(r, 'highlights'):
-                        try:
-                            highlights = r.highlights("content", top=5)
-                            if highlights is None:
-                                highlights = ""
-                        except Exception as e:
-                            logger.warning(f"获取highlights时出错: {str(e)}")
-                            highlights = ""
-                    
-                    # 安全地获取content
-                    content = r.get("content", "")
-                    if content:
-                        content = content[:500]
-                    
-                    # 构建结果字典
-                    result_dict = {
-                        "title": r["title"],
-                        "score": float(r.score),  # 确保score是可序列化的
-                        "highlights": str(highlights),  # 确保highlights是字符串
-                        "content": str(content)  # 确保content是字符串
-                    }
-                    formatted_results.append(result_dict)
-                except Exception as e:
-                    logger.error(f"处理搜索结果时出错: {str(e)}")
-                    continue
+            # 如果没有结果，尝试列出所有文档的标题
+            if len(results) == 0:
+                all_docs = [doc for doc in searcher.all_stored_fields()]
+                logger.info(f"索引中的所有文档: {[doc['title'] for doc in all_docs]}")
             
-            return formatted_results
+            return [{"title": r["title"], 
+                     "score": float(r.score), 
+                     "highlights": r.highlights("content", top=5) if hasattr(r, 'highlights') else "",
+                     "content": str(r.get("content", ""))[:500]
+                    } for r in results]
         except Exception as e:
             logger.error(f"搜索过程中出错: {str(e)}")
             return []
