@@ -853,20 +853,8 @@ def extract_core_keywords(query):
         json={
             "model": "deepseek-r1:14b",
             "messages": [
-                {"role": "system", "content": "你是一个专门用于提取医疗领域核心关键词的AI助手。请从给定的问题中提取最重要的医学术语或症状描述。"},
-                {"role": "user", "content": f"""
-                从以下问题中提取2-3个最重要的核心关键词。这些关键词应该是搜索医疗文档时最有可能找到相关信息的词。
-                
-                注意：
-                1. 常见词"患者"、"病人"、"医生"、"医院"等不应被视为核心关键词，除非它们是问题的主要焦点。
-                2. 优先选择专业医学术语、症状描述或特定的疾病名称。
-                3. 关键词可以是题中明确出现的词，也可以是根据问题内容推断出的相关医学术语。
-                4. 如果问题中没有明确的医学术语，可以选择问题中最具体、最相关的词语。
-
-                问题：{query}
-
-                核心关键词：
-                """}
+                {"role": "system", "content": "你是一个专门用于提取关键词的助手。请直接返回2-3个关键词，每行一个，不要包含任何其他内容。不要有任何解释、标签、序号或标点符号。"},
+                {"role": "user", "content": f"从以下问题中提取2-3个最重要的关键词，直接返回关键词列表，每行一个关键词：\n\n{query}"}
             ]
         }
     )
@@ -884,8 +872,16 @@ def extract_core_keywords(query):
             except json.JSONDecodeError:
                 continue
     
-    keywords = full_response.strip().split(', ')
-    return [keyword.strip() for keyword in keywords if keyword.strip()]  # 移除空字符串
+    # 清理响应，只保留关键词
+    keywords = []
+    for line in full_response.strip().split('\n'):
+        # 清理每一行
+        line = line.strip().lstrip('0123456789.-*• ')
+        if line and not any(marker in line.lower() for marker in ['<', '>', ':', '：', '思考', '分析', '关键词']):
+            keywords.append(line.strip())
+    
+    # 确保唯一性并返回
+    return list(set(keywords))
 
 medical_synonyms = {
     "脑梗死": ["脑梗塞", "缺血性脑卒中"],
