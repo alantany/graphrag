@@ -857,8 +857,8 @@ def extract_core_keywords(query):
         json={
             "model": "deepseek-r1:14b",
             "messages": [
-                {"role": "system", "content": "你是一个专门用于提取关键词的助手。请直接返回2-3个关键词，每行一个，不要包含任何其他内容。不要有任何解释、标签、序号或标点符号。"},
-                {"role": "user", "content": f"从以下问题中提取2-3个最重要的关键词，直接返回关键词列表，每行一个关键词：\n\n{query}"}
+                {"role": "system", "content": "你是一个提取关键词的助手。请直接返回问题中最重要的2-3个关键词，每行一个。不要返回任何其他内容，不要有任何解释、标签、序号、标点符号或思考过程。"},
+                {"role": "user", "content": f"请从以下问题中提取2-3个最重要的关键词。直接返回关键词，每行一个，不要有任何其他内容：\n{query}"}
             ]
         }
     )
@@ -876,16 +876,28 @@ def extract_core_keywords(query):
             except json.JSONDecodeError:
                 continue
     
-    # 清理响应，只保留关键词
+    # 清理响应，只保留实际的关键词
     keywords = []
     for line in full_response.strip().split('\n'):
         # 清理每一行
         line = line.strip().lstrip('0123456789.-*• ')
-        if line and not any(marker in line.lower() for marker in ['<', '>', ':', '：', '思考', '分析', '关键词']):
+        # 排除包含特定标记的行
+        if line and not any(marker in line.lower() for marker in [
+            '<', '>', ':', '：', '思考', '分析', '考虑', '总结', '关键词',
+            '再想', '一下', '是否', '比如', '如果', '所以', '目前', '但是'
+        ]):
+            # 如果行中包含句号，只取句号前的部分
+            if '。' in line:
+                line = line.split('。')[0]
             keywords.append(line.strip())
     
     # 确保唯一性并返回
-    return list(set(keywords))
+    keywords = list(set(keywords))
+    # 如果提取的关键词超过3个，只保留前3个
+    if len(keywords) > 3:
+        keywords = keywords[:3]
+    
+    return keywords
 
 medical_synonyms = {
     "脑梗死": ["脑梗塞", "缺血性脑卒中"],
