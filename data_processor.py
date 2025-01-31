@@ -99,7 +99,7 @@ def set_neo4j_config(config_type):
 
 def initialize_openai(api_key, base_url):
     global client
-    client = OpenAI(api_key=api_key, base_url="http://152.70.248.22:1234/api")
+    client = OpenAI(api_key=api_key, base_url="http://152.70.248.22:1234/api/chat")
     logger.info("OpenAI 初始化完成")
 
 def initialize_faiss():

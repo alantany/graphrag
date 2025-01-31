@@ -172,9 +172,9 @@ import time
 
 # 初始化
 OpenAI(
-        api_key="EMPTY",  # Ollama 不需要 API key
-        base_url="http://152.70.248.22:1234"  # Ollama API 地址
-    )
+    api_key="EMPTY",  # Ollama 不需要 API key
+    base_url="http://152.70.248.22:1234/api/chat"  # Ollama API 地址
+)
 
 
 @st.cache_resource
