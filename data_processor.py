@@ -1145,6 +1145,8 @@ def search_fulltext_index(query):
             if not query_terms:  # 如果没有有效的查询词
                 return []
             
+            # 初始化QueryParser
+            query_parser = QueryParser("content", ix.schema, group=OrGroup.factory(0.9))
             final_query = query_parser.parse(" OR ".join(k.strip() for k in keywords if k.strip()))
             logger.info(f"构建的查询: {final_query}")
 
