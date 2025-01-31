@@ -99,7 +99,7 @@ def set_neo4j_config(config_type):
 
 def initialize_openai(api_key, base_url):
     global client
-    client = OpenAI(api_key=api_key, base_url="http://152.70.248.22:1234")
+    client = OpenAI(api_key=api_key, base_url="http://152.70.248.22:1234/api")
     logger.info("OpenAI 初始化完成")
 
 def initialize_faiss():
@@ -222,7 +222,7 @@ def rag_qa(query, file_indices, k=10):
 
     # 发送给大模型
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="deepseek-r1:14b",
         messages=[
             {"role": "system", "content": "你是一个医疗助手，根据给定的病历信息回答问题。请确保回答准确、相关，并引用原文。"},
             {"role": "user", "content": prompt}
@@ -538,7 +538,7 @@ def hybrid_search(query):
         logger.info(f"发送到 OpenAI 的提示: {prompt}")
         
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="deepseek-r1:14b",
             messages=[
                 {"role": "system", "content": "你是一个医疗助手，根据给定的实体信息和关系准确回答问题。请直接使用提供的信息，不要添加未给出的假设。如果信息不足，请如说明。"},
                 {"role": "user", "content": prompt}
@@ -617,7 +617,6 @@ def get_neo4j_driver():
     return GraphDatabase.driver(
         CURRENT_NEO4J_CONFIG["URI"],
         auth=(CURRENT_NEO4J_CONFIG["USERNAME"], CURRENT_NEO4J_CONFIG["PASSWORD"])
-    )
 
 def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, excerpt, graph_entities, graph_relations):
     prompt = f"""
@@ -657,12 +656,12 @@ def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, 
     """
     
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="deepseek-r1:14b",
         messages=[
             {"role": "system", "content": "你是个智能助手，能够综合分析来自不同数据源的信息，并提供准确、全面的回答。你需要仔细考虑所有提供的信息，特别是要注意全文检索的直接匹配结果和图数据库中的关系信息。即使某些信息可能看起来不太直接相关，也请在回答中提及并解释其潜在相关性。"},
             {"role": "user", "content": prompt}
         ],
-        max_tokens=1000  # 增加 token 限制以获取更详细的回答
+        max_tokens=1000
     )
     
     return response.choices[0].message.content.strip()
@@ -755,10 +754,10 @@ class CustomChineseAnalyzer(Analyzer):
 
 def openai_tokenize(text):
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="deepseek-r1:14b",
         messages=[
             {"role": "system", "content": "你是一个专门用于中文分词的AI助手。请对给定的文本进行分词，特别注意医学术语。"},
-            {"role": "user", "content": f"请对以下文本进行分词，返回一个JSON格式的词语列表。文本：{text[:1000]}"}  # 限制文本长度以避免超过token限制
+            {"role": "user", "content": f"请对以下文本进行分词，返回一个JSON格式的词语列表。文本：{text[:1000]}"}
         ],
         max_tokens=1000
     )
@@ -835,7 +834,7 @@ def search_fulltext_index(query):
 
 def extract_core_keywords(query):
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="deepseek-r1:14b",
         messages=[
             {"role": "system", "content": "你是一个专门用于提取医疗领域核心关键词的AI助手。请从给定的问题中提取最重要的医学术语或症状描述。"},
             {"role": "user", "content": f"""

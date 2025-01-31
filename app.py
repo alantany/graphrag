@@ -40,7 +40,7 @@ from data_processor import faiss_id_to_text, faiss_id_counter, faiss_index
 # 初始化 OpenAI 客户端
 client = OpenAI(
     api_key="EMPTY",  # Ollama 不需要 API key
-    base_url="http://152.70.248.22:1234/api/chat"  # Ollama API 地址
+    base_url="http://152.70.248.22:1234/api"  # Ollama API 地址
 )
 
 # 设置面配置
@@ -66,7 +66,7 @@ st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 # 初始化 OpenAI 客户端
 initialize_openai(
     api_key="EMPTY",  # Ollama 不需要 API key
-    base_url="http://152.70.248.22:1234"
+    base_url="http://152.70.248.22:1234/api"
 )
 
 # 初始化 session state
@@ -84,7 +84,7 @@ def decompose_query(query):
     ...
     """
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="deepseek-r1:14b",
         messages=[
             {"role": "system", "content": "你是一专门于分解复杂查询的AI助手。"},
             {"role": "user", "content": prompt}
@@ -407,7 +407,7 @@ def main():
                     """
                     
                     response = client.chat.completions.create(
-                        model="gpt-3.5-turbo",
+                        model="deepseek-r1:14b",
                         messages=[
                             {"role": "system", "content": "你是一个专门解释图数据库查询结果的AI助手。请提供准确、简洁的回答。"},
                             {"role": "user", "content": context}
@@ -470,7 +470,7 @@ def main():
 回答："""
 
                             response = client.chat.completions.create(
-                                model="gpt-3.5-turbo",
+                                model="deepseek-r1:14b",
                                 messages=[
                                     {"role": "system", "content": "你是一个专门用于总结和回答问题的AI助手。请基于给定的信息提供准确、简洁的回答。"},
                                     {"role": "user", "content": prompt}

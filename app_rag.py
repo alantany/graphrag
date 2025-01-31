@@ -284,7 +284,7 @@ def rag_qa(query, file_indices, relevant_docs=None):
         return "没有找到相关信息。", [], ""
 
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="deepseek-r1:14b",
         messages=[
             {"role": "system", "content": "你是一位有帮助的助手。请根据给定的上下文回答问题。始终使用中文回答，无论问题是什么语言。在回答之后，请务必提供一段最相关的原文摘录，以'相关原文：'为前缀。"},
             {"role": "user", "content": f"上下文: {context_text}\n\n问题: {query}\n\n请提供你的回答然后在回答后面附上相关的原文摘录，以'相关原文：'为前缀。"}
@@ -665,7 +665,7 @@ def main():
 
 def direct_qa(query):
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="deepseek-r1:14b",
         messages=[
             {"role": "system", "content": "你是一个有帮助的助手，能够回答各种问题。请用中文回答。"},
             {"role": "user", "content": query}
@@ -698,7 +698,7 @@ def serpapi_search_qa(query, num_results=3):
 请根据上述搜索结果回答问题。如果搜索结果不足以回答问题，请说"根据搜索结果无法回答问题"。"""
 
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="deepseek-r1:14b",
         messages=[
             {"role": "system", "content": "你是一个有帮助的助手，能够根搜索结果回答问题"},
             {"role": "user", "content": prompt}
@@ -759,7 +759,7 @@ def nl_to_sql(nl_query):
     table_descriptions = "\n".join([f"表名: {table}\n字段: {', '.join(columns)}" for table, columns in table_info.items()])
     
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="deepseek-r1:14b",
         messages=[
             {"role": "system", "content": f"你是一个SQL专，能够将自然语言查询转换为SQL语句。数据库包含以下表和字段：\n\n{table_descriptions}"},
             {"role": "user", "content": f"将以下自然语言查询转换为SQL语句：\n{nl_query}\n只返回SQL语句，不要有其他解释。"}
@@ -798,7 +798,7 @@ def generate_explanation(nl_query, sql_query, df):
     )
 
     response = client.chat.completions.create(
-        model="deepseek",  # 使用 Deepseek 模型
+        model="deepseek-r1:14b",
         messages=[
             {"role": "system", "content": "你是一个数据分析专家，擅长解释SQL查询结果。"},
             {"role": "user", "content": prompt}
