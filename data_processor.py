@@ -231,8 +231,8 @@ def rag_qa(query, file_indices, k=10):
 """
 
     # 发送给大模型
-    response = client.chat.completions.create(
-        model=get_model_name(),
+    response = st.session_state.client.chat.completions.create(
+        model=st.secrets["deepseek"]["model"],
         messages=[
             {"role": "system", "content": "你是一个医疗助手，根据给定的病历信息回答问题。请确保回答准确、相关，并引用原文。"},
             {"role": "user", "content": prompt}
@@ -350,8 +350,8 @@ def process_data(content, file_name):
     {content}
     """
 
-    response = client.chat.completions.create(
-        model=get_model_name(),
+    response = st.session_state.client.chat.completions.create(
+        model=st.secrets["deepseek"]["model"],
         messages=[
             {"role": "system", "content": "你是一个专门处理电子病历的AI助手，擅长从复杂的医疗记录中提取关键信息和关系。请尽可能详细地提取所有相关信息，并确保所有信息都与患者姓名建立关系。"},
             {"role": "user", "content": prompt}
@@ -394,7 +394,7 @@ def process_data(content, file_name):
 
     except json.JSONDecodeError as e:
         logger.error(f"无法解析OpenAI返回的JSON: {str(e)}")
-        # 使用正则表达式提取实体和关
+        # 使用正则表达式提取实体和关系
         patient_name = re.search(r'"patient_name":\s*"([^"]+)"', result)
         patient_name = patient_name.group(1) if patient_name else "未知患者"
         entities = [{"name": e, "category": "未分类"} for e in re.findall(r'"name":\s*"([^"]+)"', result)]
@@ -635,7 +635,6 @@ def get_neo4j_driver():
     return GraphDatabase.driver(
         CURRENT_NEO4J_CONFIG["URI"],
         auth=(CURRENT_NEO4J_CONFIG["USERNAME"], CURRENT_NEO4J_CONFIG["PASSWORD"])
-    )
 
 def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, excerpt, graph_entities, graph_relations):
     prompt = f"""
@@ -674,8 +673,8 @@ def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, 
     请确保回答全面且准确，不要忽视任何重要信息，特别是全文检索中直接匹配的内容。如果信息不足或存在不确定性，请在回答中明确指出。
     """
     
-    response = client.chat.completions.create(
-        model=get_model_name(),
+    response = st.session_state.client.chat.completions.create(
+        model=st.secrets["deepseek"]["model"],
         messages=[
             {"role": "system", "content": "你是个智能助手，能够综合分析来自不同数据源的信息，并提供准确、全面的回答。你需要仔细考虑所有提供的信息，特别是要注意全文检索的直接匹配结果和图数据库中的关系信息。即使某些信息可能看起来不太直接相关，也请在回答中提及并解释其潜在相关性。"},
             {"role": "user", "content": prompt}
