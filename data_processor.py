@@ -341,9 +341,7 @@ def process_data(content, file_name):
     5. 识别任何并发症、特殊情况或注意事项。
     6. 提取出院诊断、出院医嘱等出院相关信息。
 
-    对于每个提取的实体或信息，请建立与患者姓名的直接关系。如果找不到明确的关系类型，请使用"相关"作为默认关系。
-
-    请以JSON格式输出式如下：
+    请直接以JSON格式输出，不要添加任何其他解释性文字。格式如下：
     {{
         "patient_name": "患者姓名",
         "entities": [
@@ -358,37 +356,70 @@ def process_data(content, file_name):
         ]
     }}
 
-    请确保每个实体都与患者姓名建立了关系，并尽可能详细地提取信息。对于没有明确关系类型的实体，请使用"属性"作为关系类型。
-
     电子病历内容：
     {content}
     """
 
-    response = st.session_state.client.chat.completions.create(
-        model=st.secrets["deepseek"]["model"],
-        messages=[
-            {"role": "system", "content": "你是一个专门处理电子病历的AI助手，擅长从复杂的医疗记录中提取关键信息和关系。请尽可能详细地提取所有相关信息，并确保所有信息都与患者姓名建立关系。"},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.7,
-        top_p=0.8,
-        max_tokens=2048
-    )
-
-    result = response.choices[0].message.content
-    logger.info(f"OpenAI API 返回的原始内容: {result}")
-
     try:
-        # 尝试清理和解析JSON
-        cleaned_result = re.search(r'\{.*\}', result, re.DOTALL)
-        if cleaned_result:
-            extracted_data = json.loads(cleaned_result.group())
-        else:
-            raise ValueError("无法在返回结果中找到有效的JSON")
+        response = st.session_state.client.chat.completions.create(
+            model=st.secrets["deepseek"]["model"],
+            messages=[
+                {"role": "system", "content": "你是一个专门处理电子病历的AI助手。请只返回JSON格式的数据，不要添加任何其他解释性文字。"},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            top_p=0.8,
+            max_tokens=2048
+        )
 
-        patient_name = extracted_data['patient_name']
-        entities = extracted_data['entities']
-        relations = extracted_data['relations']
+        result = response.choices[0].message.content
+        logger.info(f"OpenAI API 返回的原始内容: {result}")
+
+        # 尝试清理和解析JSON
+        try:
+            # 首先尝试直接解析
+            if result.strip().startswith('{'):
+                cleaned_result = result.strip()
+            else:
+                # 如果不是直接的JSON，尝试提取JSON部分
+                cleaned_result = re.search(r'\{.*\}', result, re.DOTALL)
+                if cleaned_result:
+                    cleaned_result = cleaned_result.group()
+                else:
+                    raise ValueError("无法在返回结果中找到有效的JSON")
+
+            # 尝试修复可能的JSON截断问题
+            if not cleaned_result.endswith('}'):
+                cleaned_result = cleaned_result + '}'
+            
+            # 确保JSON中的引号是正确的
+            cleaned_result = cleaned_result.replace('"', '"').replace('"', '"')
+            
+            extracted_data = json.loads(cleaned_result)
+
+            # 验证必要的字段
+            if not all(key in extracted_data for key in ['patient_name', 'entities', 'relations']):
+                raise ValueError("JSON缺少必要的字段")
+
+            patient_name = extracted_data['patient_name']
+            entities = extracted_data['entities']
+            relations = extracted_data['relations']
+
+        except json.JSONDecodeError as e:
+            logger.error(f"无法解析JSON: {str(e)}")
+            # 使用正则表达式提取关键信息
+            patient_name = re.search(r'"patient_name":\s*"([^"]+)"', result)
+            patient_name = patient_name.group(1) if patient_name else "未知患者"
+            
+            # 提取实体
+            entities_matches = re.findall(r'\{"name":\s*"([^"]+)",\s*"category":\s*"([^"]+)"\}', result)
+            entities = [{"name": name, "category": category} for name, category in entities_matches]
+            
+            # 生成基本关系
+            relations = [
+                {'source': patient_name, 'relation': "相关", 'target': entity['name']}
+                for entity in entities
+            ]
 
         # 确保所有实体都是字典，包含name和category
         entities = [e if isinstance(e, dict) else {"name": str(e), "category": "未分类"} for e in entities]
@@ -406,18 +437,8 @@ def process_data(content, file_name):
             if (patient_name, entity['name']) not in existing_relations and (entity['name'], patient_name) not in existing_relations:
                 relations.append({'source': patient_name, 'relation': "相关", 'target': entity['name']})
 
-    except json.JSONDecodeError as e:
-        logger.error(f"无法解析OpenAI返回的JSON: {str(e)}")
-        # 使用正则表达式提取实体和关系
-        patient_name = re.search(r'"patient_name":\s*"([^"]+)"', result)
-        patient_name = patient_name.group(1) if patient_name else "未知患者"
-        entities = [{"name": e, "category": "未分类"} for e in re.findall(r'"name":\s*"([^"]+)"', result)]
-        relations = [
-            {'source': patient_name, 'relation': "相关", 'target': entity['name']}
-            for entity in entities
-        ]
     except Exception as e:
-        logger.error(f"处理OpenAI返回结果时出错: {str(e)}")
+        logger.error(f"处理数据时发生错误: {str(e)}")
         patient_name = "未知患者"
         entities = []
         relations = []
@@ -426,59 +447,46 @@ def process_data(content, file_name):
     logger.info(f"提取的实体: {entities}")
     logger.info(f"提取的关系: {relations}")
 
-    driver = get_neo4j_driver()
+    try:
+        driver = get_neo4j_driver()
+        
+        with driver.session() as session:
+            # 删除旧数据
+            session.run("""
+            MATCH (n:Entity)
+            WHERE n.source = $file_name
+            DETACH DELETE n
+            """, file_name=file_name)
+
+            # 创建患者节点
+            session.run("""
+            MERGE (p:Entity {name: $name, type: 'Patient', source: $file_name})
+            SET p.content = $content
+            """, name=patient_name, content=content, file_name=file_name)
+
+            # 创建其他实体并与患者建立关系
+            for entity in entities:
+                session.run("""
+                MATCH (p:Entity {name: $patient_name, source: $file_name})
+                MERGE (e:Entity {name: $entity_name, category: $entity_category, source: $file_name})
+                """, patient_name=patient_name, entity_name=entity['name'], entity_category=entity['category'], file_name=file_name)
+
+            for relation in relations:
+                session.run("""
+                MATCH (s:Entity {name: $source, source: $file_name})
+                MATCH (t:Entity {name: $target, source: $file_name})
+                MERGE (s)-[r:RELATED_TO {type: $relation_type}]->(t)
+                """, source=relation['source'], target=relation['target'], relation_type=relation['relation'], file_name=file_name)
+
+        logger.info(f"处理了 1 个患者节点、{len(entities)} 个实体和 {len(relations)} 个关系")
+        driver.close()
+        return {"patient_name": patient_name, "entities": entities, "relations": relations}
     
-    with driver.session() as session:
-        # 删除旧数据
-        session.run("""
-        MATCH (n:Entity)
-        WHERE n.source = $file_name
-        DETACH DELETE n
-        """, file_name=file_name)
-
-        # 创建患者节点
-        session.run("""
-        MERGE (p:Entity {name: $name, type: 'Patient', source: $file_name})
-        SET p.content = $content
-        """, name=patient_name, content=content, file_name=file_name)
-
-        # 检查全文索引是否存在
-        try:
-            index_exists = session.run("""
-            CALL db.indexes() YIELD name, labelsOrTypes, properties
-            WHERE name = 'entityFulltextIndex'
-            RETURN count(*) > 0 AS exists
-            """).single()['exists']
-
-            if not index_exists:
-                # 尝试创建全文索引
-                try:
-                    session.run("""
-                    CALL db.index.fulltext.createNodeIndex('entityFulltextIndex', ['Entity'], ['name', 'content'])
-                    """)
-                    logger.info("全文索引创建成功")
-                except Exception as e:
-                    logger.warning(f"创建全文索引失败: {str(e)}. 继续执行其他操作。")
-        except Exception as e:
-            logger.warning(f"检查或创建全文索引时出错: {str(e)}. 继续执行其他操作。")
-
-        # 创建其他实体并与患者建立关系
-        for entity in entities:
-            session.run("""
-            MATCH (p:Entity {name: $patient_name, source: $file_name})
-            MERGE (e:Entity {name: $entity_name, category: $entity_category, source: $file_name})
-            """, patient_name=patient_name, entity_name=entity['name'], entity_category=entity['category'], file_name=file_name)
-
-        for relation in relations:
-            session.run("""
-            MATCH (s:Entity {name: $source, source: $file_name})
-            MATCH (t:Entity {name: $target, source: $file_name})
-            MERGE (s)-[r:RELATED_TO {type: $relation_type}]->(t)
-            """, source=relation['source'], target=relation['target'], relation_type=relation['relation'], file_name=file_name)
-
-    logger.info(f"处理了 1 个患者节点、{len(entities)} 个实体和 {len(relations)} 个关系")
-    driver.close()
-    return {"patient_name": patient_name, "entities": entities, "relations": relations}
+    except Exception as e:
+        logger.error(f"数据库操作时发生错误: {str(e)}")
+        if 'driver' in locals():
+            driver.close()
+        raise
 
 def query_graph(query):
     logger.info(f"执行图查询: {query}")
