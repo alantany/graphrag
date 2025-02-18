@@ -34,6 +34,7 @@ from data_processor import (
 )
 from whoosh.query import Term
 from dotenv import load_dotenv
+from config import validate_config
 
 # 在文件顶部的导入语句之后添加
 from data_processor import faiss_id_to_text, faiss_id_counter, faiss_index
@@ -119,6 +120,7 @@ class CustomSentenceTransformer:
 SentenceTransformer = CustomSentenceTransformer
 
 def main():
+    validate_config()  # ← 添加在应用初始化时
     # 设置 Neo4j 配置
     try:
         # 在使用 neo4j_option 之前先定义它
