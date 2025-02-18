@@ -1,3 +1,6 @@
+import streamlit as st
+from openai import OpenAI
+
 def get_openai_client():
     """获取统一配置的OpenAI客户端"""
     client = OpenAI(
@@ -15,4 +18,20 @@ def get_openai_client():
 
 def get_model_name():
     """获取当前配置的模型名称"""
-    return st.secrets["openrouter"]["model"] 
+    return st.secrets["openrouter"]["model"]
+
+def validate_config():
+    """验证配置是否正确"""
+    required_secrets = {
+        "openrouter": ["api_key", "base_url", "model"],
+        "neo4j": ["uri", "username", "password"]
+    }
+    
+    for section, keys in required_secrets.items():
+        if section not in st.secrets:
+            raise ValueError(f"缺少配置部分：{section}")
+        for key in keys:
+            if key not in st.secrets[section]:
+                raise ValueError(f"在 {section} 中缺少配置项：{key}")
+    
+    return True 
