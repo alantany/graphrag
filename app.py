@@ -87,7 +87,7 @@ def decompose_query(query):
     ...
     """
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model=get_model_name(),  # 使用配置中的模型名称
         messages=[
             {"role": "system", "content": "你是一专门于分解复杂查询的AI助手。"},
             {"role": "user", "content": prompt}
