@@ -97,10 +97,12 @@ def set_neo4j_config(config_type):
     logger.info(f"Neo4j 配已设置: URI={CURRENT_NEO4J_CONFIG['URI']}, USERNAME={CURRENT_NEO4J_CONFIG['USERNAME']}")
     return CURRENT_NEO4J_CONFIG
 
-def initialize_openai(api_key, base_url):
-    global client
-    client = OpenAI(api_key=api_key, base_url=base_url)
-    logger.info("OpenAI 初始化完成")
+def initialize_openai():
+    return OpenAI(
+        api_key=os.environ.get("OPENROUTER_API_KEY", st.secrets["openrouter"]["api_key"]),
+        base_url=os.environ.get("OPENROUTER_BASE_URL", st.secrets["openrouter"]["base_url"]),
+        timeout=60.0
+    )
 
 def initialize_faiss():
     global faiss_index, faiss_id_to_text, faiss_id_counter

@@ -33,15 +33,20 @@ from data_processor import (
     clear_vector_data, Term, initialize_neo4j, CURRENT_NEO4J_CONFIG
 )
 from whoosh.query import Term
+from dotenv import load_dotenv
 
 # 在文件顶部的导入语句之后添加
 from data_processor import faiss_id_to_text, faiss_id_counter, faiss_index
 
+load_dotenv()  # 加载本地.env文件
+
 # 初始化 OpenAI 客户端
-client = OpenAI(
-    api_key="sk-1pUmQlsIkgla3CuvKTgCrzDZ3r0pBxO608YJvIHCN18lvOrn",  # 使用您的 API 密钥
-    base_url="https://api.chatanywhere.tech/v1"
-)
+def initialize_openai():
+    client = OpenAI(
+        api_key=os.getenv("OPENROUTER_API_KEY") or st.secrets["openrouter"]["api_key"],
+        base_url=os.getenv("OPENROUTER_BASE_URL") or st.secrets["openrouter"]["base_url"]
+    )
+    return client
 
 # 设置面配置
 st.set_page_config(
@@ -64,10 +69,7 @@ hide_streamlit_style = """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # 初始化 OpenAI 客户端
-initialize_openai(
-    api_key="sk-1pUmQlsIkgla3CuvKTgCrzDZ3r0pBxO608YJvIHCN18lvOrn", #free版
-    base_url="https://api.chatanywhere.tech/v1"
-)
+initialize_openai()
 
 # 初始化 session state
 if "file_indices" not in st.session_state:

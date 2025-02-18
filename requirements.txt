@@ -7,7 +7,7 @@ pyvis==0.3.2
 faiss-cpu==1.8.0.post1
 numpy==1.26.4
 openai==1.57.1
-python-dotenv==1.0.1
+python-dotenv==1.0.0
 jieba==0.42.1
 sentence-transformers==2.2.2
 huggingface_hub==0.14.1
