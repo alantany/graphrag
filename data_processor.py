@@ -198,30 +198,35 @@ def search_documents(keywords, file_indices):
 def rag_qa(query, file_indices, k=10):
     logger.info(f"执行 RAG 问答: {query}")
     
-    # 向量化查询
-    query_vector = model.encode([query])
-    
-    # 在所有文档中搜索最相关的文本块
-    all_results = []
-    for file_name, (chunks, index, patient_name) in file_indices.items():
-        D, I = index.search(query_vector, k)
-        for i, (dist, idx) in enumerate(zip(D[0], I[0])):
-            if idx != -1:
-                all_results.append({
-                    "text": chunks[idx],
-                    "distance": dist,
-                    "file_name": file_name,
-                    "patient_name": patient_name
-                })
-    
-    # 按相似度排序并选择前k个结果
-    all_results.sort(key=lambda x: x["distance"])
-    top_results = all_results[:k]
-    
-    # 构建提示
-    context = "\n\n".join([f"文件: {r['file_name']}\n患者: {r['patient_name']}\n内容: {r['text']}" for r in top_results])
-    
-    prompt = f"""基于以下信息回答问题。如果信息不足以回答问题，请如实说明。
+    try:
+        # 向量化查询
+        query_vector = model.encode([query])
+        
+        # 在所有文档中搜索最相关的文本块
+        all_results = []
+        for file_name, (chunks, index, patient_name) in file_indices.items():
+            D, I = index.search(query_vector, k)
+            for i, (dist, idx) in enumerate(zip(D[0], I[0])):
+                if idx != -1:
+                    all_results.append({
+                        "text": chunks[idx],
+                        "distance": dist,
+                        "file_name": file_name,
+                        "patient_name": patient_name
+                    })
+        
+        # 按相似度排序并选择前k个结果
+        all_results.sort(key=lambda x: x["distance"])
+        top_results = all_results[:k]
+        
+        if not top_results:
+            logger.warning("没有找到相关的文本块")
+            return "抱歉，我没有找到与您的问题相关的信息。", [], ""
+        
+        # 构建提示
+        context = "\n\n".join([f"文件: {r['file_name']}\n患者: {r['patient_name']}\n内容: {r['text']}" for r in top_results])
+        
+        prompt = f"""基于以下信息回答问题。如果信息不足以回答问题，请如实说明。
 
 问题：{query}
 
@@ -231,27 +236,35 @@ def rag_qa(query, file_indices, k=10):
 请提供详细的回答，并在回答后附上最相关的原文摘录，以"相关原文："为前缀。确保回答中提到的患者信息与上下文中的患者信息一致。
 """
 
-    # 发送给大模型
-    response = st.session_state.client.chat.completions.create(
-        model=st.secrets["deepseek"]["model"],
-        messages=[
-            {"role": "system", "content": "你是一个医疗助手，根据给定的病历信息回答问题。请确保回答准确、相关，并引用原文。"},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.7,
-        top_p=0.8,
-        max_tokens=2048
-    )
-    
-    answer = response.choices[0].message.content.strip()
-    
-    # 解析回答和相关原文
-    if "相关原文：" in answer:
-        main_answer, relevant_excerpt = answer.split("相关原文：", 1)
-    else:
-        main_answer, relevant_excerpt = answer, ""
-    
-    return main_answer.strip(), top_results, relevant_excerpt.strip()
+        # 发送给大模型
+        response = st.session_state.client.chat.completions.create(
+            model=st.secrets["deepseek"]["model"],
+            messages=[
+                {"role": "system", "content": "你是一个医疗助手，根据给定的病历信息回答问题。请确保回答准确、相关，并引用原文。"},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            top_p=0.8,
+            max_tokens=2048
+        )
+        
+        if not response or not hasattr(response, 'choices') or not response.choices:
+            logger.error("API返回了空响应或无效响应")
+            return "抱歉，在处理您的问题时遇到了技术问题。请稍后再试。", top_results, ""
+        
+        answer = response.choices[0].message.content.strip()
+        
+        # 解析回答和相关原文
+        if "相关原文：" in answer:
+            main_answer, relevant_excerpt = answer.split("相关原文：", 1)
+        else:
+            main_answer, relevant_excerpt = answer, ""
+        
+        return main_answer.strip(), top_results, relevant_excerpt.strip()
+        
+    except Exception as e:
+        logger.error(f"RAG问答过程中发生错误: {str(e)}", exc_info=True)
+        return f"抱歉，在处理您的问题时发生了错误: {str(e)}", [], ""
 
 # 保存索引和chunks
 def save_index(file_name, chunks, index, patient_name):
