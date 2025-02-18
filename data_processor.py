@@ -493,57 +493,60 @@ def query_graph(query):
     driver = get_neo4j_driver()
     
     with driver.session() as session:
-        # 使用标准索引进行查询
+        # 使用更智能的查询逻辑
         result = session.run("""
-        MATCH (n:Entity)
-        WHERE n.name CONTAINS $query OR n.content CONTAINS $query
-        WITH n
-        OPTIONAL MATCH (n)-[r]-(related)
-        WHERE related.source IS NOT NULL
-        RETURN n.name AS Entity, type(r) AS Relation, r.type AS RelationType, 
-               related.name AS Related, n.content AS Content, n.source AS Source,
-               related.source AS RelatedSource
-        ORDER BY n.name
-        LIMIT 20
+        // 首先匹配患者节点
+        MATCH (patient:Entity)
+        WHERE patient.name CONTAINS $query 
+           OR EXISTS {
+              MATCH (patient)-[r]-(m:Entity) 
+              WHERE m.name CONTAINS $query
+           }
+        
+        // 获取与患者相关的所有信息
+        OPTIONAL MATCH (patient)-[r]-(related:Entity)
+        WHERE related.category IN ['现病史', '既往史', '诊断', '主诉', '辅助检查']
+           OR r.type IN ['现病史', '既往史', '诊断', '主诉', '相关']
+        
+        // 返回所有相关信息
+        RETURN DISTINCT
+            patient.name AS Entity,
+            patient.category AS Category,
+            patient.content AS Content,
+            patient.source AS Source,
+            COLLECT(DISTINCT {
+                relation: r.type,
+                entity: related.name,
+                category: related.category
+            }) AS Relations
         """, {"query": query})
         
         entities = set()
         relations = []
         contents = {}
+        
         for record in result:
             entity = record["Entity"]
-            related = record["Related"]
-            relation_type = record["RelationType"] or record["Relation"]
-            
-            if entity and related:
-                entities.add(entity)
-                entities.add(related)
-                relation = {
-                    "source": entity,
-                    "relation": relation_type,
-                    "target": related
-                }
-                if relation not in relations:
-                    relations.append(relation)
-                
-                # 添加反向关系
-                reverse_relation = {
-                    "source": related,
-                    "relation": f"反向_{relation_type}",
-                    "target": entity
-                }
-                if reverse_relation not in relations:
-                    relations.append(reverse_relation)
-            
             if entity:
+                entities.add(entity)
                 contents[entity] = record["Content"]
-            if related:
-                contents[related] = record["Content"]
+                
+                # 处理关系
+                for rel in record["Relations"]:
+                    if rel["entity"]:  # 确保关联实体存在
+                        related_entity = rel["entity"]
+                        entities.add(related_entity)
+                        relations.append({
+                            "source": entity,
+                            "relation": rel["relation"] or "相关",
+                            "target": related_entity
+                        })
+        
+        logger.info(f"查询结果 - 实体: {entities}")
+        logger.info(f"查询结果 - 关系: {relations}")
+        logger.info(f"查询结果 - 内容: {contents}")
     
     driver.close()
-    logger.info(f"查询结果 - 实体: {entities}")
-    logger.info(f"查询结果 - 关系: {relations}")
-    logger.info(f"查询结果 - 内容: {contents}")
     return list(entities), relations, contents
 
 def hybrid_search(query):
