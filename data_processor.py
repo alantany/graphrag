@@ -110,6 +110,7 @@ def initialize_openai():
         "X-Title": "AI知识问答系统"  # 您的应用名称
     }
     
+    st.session_state.client = client
     return client
 
 def initialize_faiss():
@@ -553,8 +554,8 @@ def hybrid_search(query):
         
         logger.info(f"发送到 OpenAI 的提示: {prompt}")
         
-        response = client.chat.completions.create(
-            model=get_model_name(),
+        response = st.session_state.client.chat.completions.create(
+            model=st.secrets["deepseek"]["model"],
             messages=[
                 {"role": "system", "content": "你是一个医疗助手，根据给定的实体信息和关系准确回答问题。请直接使用提供的信息，不要添加未给出的假设。如果信息不足，请如说明。"},
                 {"role": "user", "content": prompt}
@@ -681,7 +682,7 @@ def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, 
         ],
         temperature=0.7,
         top_p=0.8,
-        max_tokens=1000  # 增加 token 限制以获取更详细的回答
+        max_tokens=1000
     )
     
     return response.choices[0].message.content.strip()
@@ -773,16 +774,16 @@ class CustomChineseAnalyzer(Analyzer):
             yield Token(text=t.text, pos=t.pos, startchar=t.startchar, endchar=t.endchar)
 
 def openai_tokenize(text):
-    response = client.chat.completions.create(
-        model=get_model_name(),
+    response = st.session_state.client.chat.completions.create(
+        model=st.secrets["deepseek"]["model"],
         messages=[
             {"role": "system", "content": "你是一个专门用于中文分词的AI助手。请对给定的文本进行分词，特别注意医学术语。"},
-            {"role": "user", "content": f"请对以下文本进行分词，返回一个JSON格式的词语列表。文本：{text[:1000]}"}  # 限制文本长度以避免超过token限制
+            {"role": "user", "content": f"请对以下文本进行分词，用空格分隔每个词：\n{text}"}
         ],
-        max_tokens=1000
+        temperature=0.3,
+        max_tokens=1024
     )
-    tokens = json.loads(response.choices[0].message.content)
-    return tokens
+    return response.choices[0].message.content.strip().split()
 
 class OpenAIAnalyzer(Analyzer):
     def __call__(self, text, **kwargs):
@@ -853,28 +854,16 @@ def search_fulltext_index(query):
                 } for r in results]
 
 def extract_core_keywords(query):
-    response = client.chat.completions.create(
-        model=get_model_name(),
+    response = st.session_state.client.chat.completions.create(
+        model=st.secrets["deepseek"]["model"],
         messages=[
-            {"role": "system", "content": "你是一个专门用于提取医疗领域核心关键词的AI助手。请从给定的问题中提取最重要的医学术语或症状描述。"},
-            {"role": "user", "content": f"""
-            从以下问题中提取2-3个最重要的核心关键词。这些关键词应该是搜索医疗文档时最有可能找到相关信息的词。
-            
-            注意：
-            1. 常见词"患者"、"病人"、"医生"、"医院"等不应被视为核心关键词，除非它们是问题的主要焦点。
-            2. 优先选择专业医学术语、症状描述或特定的疾病名称。
-            3. 关键词可以是题中明确出现的词，也可以是根据问题内容推断出的相关医学术语。
-            4. 如果问题中没有明确的医学术语，可以选择问题中最具体、最相关的词语。
-
-            问题：{query}
-
-            核心关键词：
-            """}
+            {"role": "system", "content": "你是一个专门用于提取关键词的AI助手。请从给定的查询中提取核心关键词。"},
+            {"role": "user", "content": f"请从以下查询中提取3-5个最重要的关键词，用空格分隔：\n{query}"}
         ],
-        max_tokens=50
+        temperature=0.3,
+        max_tokens=100
     )
-    keywords = response.choices[0].message.content.strip().split(', ')
-    return [keyword.strip() for keyword in keywords if keyword.strip()]  # 移除空字符串
+    return response.choices[0].message.content.strip().split()
 
 medical_synonyms = {
     "脑梗死": ["脑梗塞", "缺血性脑卒中"],
@@ -1064,3 +1053,104 @@ def initialize_neo4j():
     except Exception as e:
         logger.error(f"初始化 Neo4j 时出错: {str(e)}")
         raise
+
+def process_graph_query(query):
+    prompt = f"""
+    基于以下问题，生成一个Cypher查询语句来查询Neo4j图数据库。
+    
+    问题：{query}
+    
+    注意：
+    1. 数据库中的节点标签是Entity
+    2. 节点有以下属性：name（名称）, type（类型）, category（类别）, content（内容）
+    3. 关系类型是RELATED_TO，关系有type属性表示具体关系
+    4. 如果问题涉及到具体的患者，应该在查询中包含对应的患者节点
+    5. 如果问题是关于某种症状或疾病，应该查找与之相关的所有患者
+    6. 返回的结果应该包含足够的上下文信息
+    
+    请生成一个能够准确回答问题的Cypher查询语句。
+    """
+    
+    response = st.session_state.client.chat.completions.create(
+        model=st.secrets["deepseek"]["model"],
+        messages=[
+            {"role": "system", "content": "你是一个专门用于生成Cypher查询语句的AI助手。请根据给定的问题生成合适的查询语句。"},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.3,
+        max_tokens=500
+    )
+    
+    cypher_query = response.choices[0].message.content.strip()
+    logger.info(f"生成的Cypher查询: {cypher_query}")
+    
+    return cypher_query
+
+def process_graph_results(query, results):
+    # 将结果转换为更易于处理的格式
+    formatted_results = []
+    for record in results:
+        item = {}
+        for key in record.keys():
+            if hasattr(record[key], "items"):  # 处理节点
+                props = dict(record[key].items())
+                item[key] = props
+            elif isinstance(record[key], list):  # 处理列表
+                item[key] = [
+                    dict(x.items()) if hasattr(x, "items") else x
+                    for x in record[key]
+                ]
+            else:  # 处理其他类型
+                item[key] = record[key]
+        formatted_results.append(item)
+    
+    # 构建提示
+    results_str = json.dumps(formatted_results, ensure_ascii=False, indent=2)
+    prompt = f"""
+    基于以下信息，请生成一个详细的回答：
+
+    问题：{query}
+
+    查询结果：
+    {results_str}
+
+    请注意：
+    1. 回答应该直接针对问题，使用查询结果中的信息
+    2. 如果结果中包含多个患者，请分别说明每个患者的情况
+    3. 如果结果中包含关系信息，请解释这些关系
+    4. 如果某些信息不完整或不确定，请在回答中说明
+    5. 使用通俗易懂的语言，但保留必要的医学术语
+    """
+
+    response = st.session_state.client.chat.completions.create(
+        model=st.secrets["deepseek"]["model"],
+        messages=[
+            {"role": "system", "content": "你是一个专门解释医疗信息的AI助手。请根据图数据库的查询结果，生成清晰、准确的回答。"},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.7,
+        max_tokens=1000
+    )
+
+    answer = response.choices[0].message.content.strip()
+    
+    # 提取所有实体和关系
+    entities = set()
+    relations = []
+    
+    for record in results:
+        for value in record.values():
+            if hasattr(value, "items"):  # 节点
+                entities.add(value.get("name", ""))
+            elif isinstance(value, list):  # 关系路径
+                for item in value:
+                    if hasattr(item, "items"):
+                        entities.add(item.get("name", ""))
+                    elif isinstance(item, dict):
+                        source = item.get("source", "")
+                        target = item.get("target", "")
+                        relation = item.get("relation", "")
+                        if source and target and relation:
+                            relations.append({"source": source, "relation": relation, "target": target})
+    
+    return answer, list(entities), relations
