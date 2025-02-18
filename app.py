@@ -44,12 +44,19 @@ load_dotenv()  # 加载本地.env文件
 # 初始化 OpenAI 客户端
 def initialize_openai():
     client = OpenAI(
-        api_key=os.getenv("OPENROUTER_API_KEY") or st.secrets["openrouter"]["api_key"],
-        base_url=os.getenv("OPENROUTER_BASE_URL") or st.secrets["openrouter"]["base_url"]
+        api_key=os.getenv("DEEPSEEK_API_KEY") or st.secrets["deepseek"]["api_key"],
+        base_url=os.getenv("DEEPSEEK_BASE_URL") or st.secrets["deepseek"]["base_url"]
     )
+    
+    # 添加OpenRouter所需的请求头
+    client._default_headers = {
+        "HTTP-Referer": "https://your-app-url.com",  # 替换为您的应用URL
+        "X-Title": "AI知识问答系统"  # 您的应用名称
+    }
+    
     return client
 
-# 设置面配置
+# 设置页面配置
 st.set_page_config(
     page_title="AI知识问答系统",
     page_icon="🧠",
@@ -69,8 +76,9 @@ hide_streamlit_style = """
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-# 初始化 OpenAI 客户端
-initialize_openai()
+# 初始化全局变量
+if 'client' not in st.session_state:
+    st.session_state.client = initialize_openai()
 
 # 初始化 session state
 if "file_indices" not in st.session_state:
@@ -86,7 +94,7 @@ def decompose_query(query):
     2. 子查询2
     ...
     """
-    response = client.chat.completions.create(
+    response = st.session_state.client.chat.completions.create(
         model=get_model_name(),  # 使用配置中的模型名称
         messages=[
             {"role": "system", "content": "你是一专门于分解复杂查询的AI助手。"},
@@ -120,7 +128,12 @@ class CustomSentenceTransformer:
 SentenceTransformer = CustomSentenceTransformer
 
 def main():
-    validate_config()  # ← 添加在应用初始化时
+    validate_config()  # 验证配置
+    
+    # 确保client已初始化
+    if 'client' not in st.session_state:
+        st.session_state.client = initialize_openai()
+    
     # 设置 Neo4j 配置
     try:
         # 在使用 neo4j_option 之前先定义它
@@ -410,7 +423,7 @@ def main():
                     请根据以上信息，生成一个简洁明了的综合回答。回答应该直接针对问题"{graph_query}"，并包含所有相关的重要信息。
                     """
                     
-                    response = client.chat.completions.create(
+                    response = st.session_state.client.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[
                             {"role": "system", "content": "你是一个专门解释图数据库查询结果的AI助手。请提供准确、简洁的回答。"},
@@ -473,7 +486,7 @@ def main():
 
 回答："""
 
-                            response = client.chat.completions.create(
+                            response = st.session_state.client.chat.completions.create(
                                 model="gpt-3.5-turbo",
                                 messages=[
                                     {"role": "system", "content": "你是一个专门用于总结和回答问题的AI助手。请基于给定的信息提供准确、简洁的回答。"},

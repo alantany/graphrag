@@ -30,6 +30,7 @@ from whoosh.searching import NoTermsException
 
 # 在文件开头声明全局变量
 global CURRENT_NEO4J_CONFIG
+global client  # 添加client全局变量声明
 
 # Neo4j连接配置
 AURA_URI = "neo4j+s://85c689ad.databases.neo4j.io:7687"
@@ -50,8 +51,6 @@ CURRENT_NEO4J_CONFIG = {
     "USERNAME": AURA_USERNAME,
     "PASSWORD": AURA_PASSWORD
 }
-
-client = None
 
 # 检查是否在 Streamlit 环境中运行
 if 'streamlit' in globals():
@@ -98,11 +97,20 @@ def set_neo4j_config(config_type):
     return CURRENT_NEO4J_CONFIG
 
 def initialize_openai():
-    return OpenAI(
+    global client
+    client = OpenAI(
         api_key=os.environ.get("DEEPSEEK_API_KEY", st.secrets["deepseek"]["api_key"]),
         base_url=os.environ.get("DEEPSEEK_BASE_URL", st.secrets["deepseek"]["base_url"]),
         timeout=60.0
     )
+    
+    # 添加OpenRouter所需的请求头
+    client._default_headers = {
+        "HTTP-Referer": "https://your-app-url.com",  # 替换为您的应用URL
+        "X-Title": "AI知识问答系统"  # 您的应用名称
+    }
+    
+    return client
 
 def initialize_faiss():
     global faiss_index, faiss_id_to_text, faiss_id_counter
@@ -627,7 +635,6 @@ def get_neo4j_driver():
     return GraphDatabase.driver(
         CURRENT_NEO4J_CONFIG["URI"],
         auth=(CURRENT_NEO4J_CONFIG["USERNAME"], CURRENT_NEO4J_CONFIG["PASSWORD"])
-    )
 
 def generate_final_answer(query, graph_answer, vector_answer, fulltext_results, excerpt, graph_entities, graph_relations):
     prompt = f"""
