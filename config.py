@@ -2,10 +2,10 @@ import streamlit as st
 from openai import OpenAI
 
 def get_openai_client():
-    """获取统一配置的OpenAI客户端"""
+    """获取统一配置的DeepSeek客户端"""
     client = OpenAI(
-        api_key=st.secrets["openrouter"]["api_key"],
-        base_url=st.secrets["openrouter"]["base_url"]
+        api_key=st.secrets["deepseek"]["api_key"],
+        base_url=st.secrets["deepseek"]["base_url"]
     )
     
     # 添加OpenRouter所需的请求头
@@ -18,12 +18,12 @@ def get_openai_client():
 
 def get_model_name():
     """获取当前配置的模型名称"""
-    return st.secrets["openrouter"]["model"]
+    return st.secrets["deepseek"]["model"]
 
 def validate_config():
     """验证配置是否正确"""
     required_secrets = {
-        "openrouter": ["api_key", "base_url", "model"],
+        "deepseek": ["api_key", "base_url", "model"],
         "neo4j": ["uri", "username", "password"]
     }
     

@@ -99,8 +99,8 @@ def set_neo4j_config(config_type):
 
 def initialize_openai():
     return OpenAI(
-        api_key=os.environ.get("OPENROUTER_API_KEY", st.secrets["openrouter"]["api_key"]),
-        base_url=os.environ.get("OPENROUTER_BASE_URL", st.secrets["openrouter"]["base_url"]),
+        api_key=os.environ.get("DEEPSEEK_API_KEY", st.secrets["deepseek"]["api_key"]),
+        base_url=os.environ.get("DEEPSEEK_BASE_URL", st.secrets["deepseek"]["base_url"]),
         timeout=60.0
     )
 
